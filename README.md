@@ -24,3 +24,4 @@ Drivers can search for nearby parking, receive a specific spot assignment based 
 
 6. Team Members
   - Sanvi Gudipati
+  - Aryan Mandapati 
