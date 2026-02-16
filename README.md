@@ -13,9 +13,9 @@ Drivers can search for nearby parking, receive a specific parking space assignme
   - Space reservation
 
 3. Technical Architecture
-  1) Frontend Layer: This is what users will see and interact with. It includes features like logging in, searching for parking spaces, making reservations, and completing payments.
-  2) Backend Layer: This part runs in the background and handles the main logic of the system. It manages assigning spaces to vehicles, updating spot availability, and generating tickets and bills.
-  3) Database Layer: This stores all of the important information such as user accounts, parking lot details, vehicle types, reservations, and payment records.
+  1) Frontend Layer: This is what users will see and interact with. It includes features like logging in, searching for parking spaces, making reservations, and completing payments
+  2) Backend Layer: This part runs in the background and handles the main logic of the system. It manages assigning spaces to vehicles, updating spot availability, and generating tickets and bills
+  3) Database Layer: This stores all of the important information such as user accounts, parking lot details, vehicle types, reservations, and payment records
 
 4. Future Scope
   1) Connecting the system to GPS maps to show parking locations more accurately
