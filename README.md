@@ -17,7 +17,13 @@ Drivers can search for nearby parking, receive a specific parking space assignme
   2) Backend Layer: This part runs in the background and handles the main logic of the system. It manages assigning spaces to vehicles, updating spot availability, and generating tickets and bills.
   3) Database Layer: This stores all of the important information such as user accounts, parking lot details, vehicle types, reservations, and payment records.
 
-4. Team Members
+4. Future Scope
+  1) Connecting the system to GPS maps to show parking locations more accurately
+  2) Adjusting parking prices automatically based on demand
+  3) Connecting to external payment services for smoother transactions
+  4) Developing a mobile app version of the platform
+
+5. Team Members
   - Sanvi Gudipati
   - Soha Amjad
   - Aryan Mandapati
