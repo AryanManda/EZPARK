@@ -19,6 +19,7 @@ Drivers can search for nearby parking, receive a specific parking space assignme
 
 4. Team Members
   - Sanvi Gudipati
+  - Soha Amjad
   - Aryan Mandapati
   - Pranav Nagre
   - Russell Williams
