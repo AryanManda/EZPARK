@@ -7,12 +7,12 @@ Drivers can search for nearby parking, receive a specific spot assignment based 
 
 2. Core Features/Functions
 
-  a) login
-  b) payment
-  c) different type of spotstruck/motorcycle/car
-  d) available spots
-  e) check in/ check out
-  f) reserved
+  - login
+  - payment
+  - different type of spotstruck/motorcycle/car
+  - available spots
+  -  check in/ check out
+  -   reserved
 
 3. Technical Architecture
 
@@ -24,4 +24,5 @@ Drivers can search for nearby parking, receive a specific spot assignment based 
 
 6. Team Members
   - Sanvi Gudipati
-  - Aryan Mandapati 
+  - Aryan Mandapati
+  - Pranav Nagre
