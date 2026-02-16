@@ -23,4 +23,4 @@ Drivers can search for nearby parking, receive a specific spot assignment based 
 5. Future Roadmap
 
 6. Team Members
-  -Sanvi Gudipati
+  - Sanvi Gudipati
