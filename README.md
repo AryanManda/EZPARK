@@ -15,6 +15,9 @@ Drivers can search for nearby parking, receive a specific spot assignment based 
   -   reserved
 
 3. Technical Architecture
+  1) Frontend Layer: This is what users will see and interact with. It includes features like logging in, searching for parking spots, making reservations, and completing payments.
+  2) Backend Layer: This part runs in the background and handles the main logic of the system. It manages parking assignments, updates spot availability, and generates tickets and bills.
+  3) Database Layer: This stores all the important information, such as user accounts, parking lot details, vehicle types, reservations, and payment records.
 
 
 4. Setup & Installation
