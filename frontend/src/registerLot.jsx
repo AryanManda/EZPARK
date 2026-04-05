@@ -1,5 +1,5 @@
-// RegisterLot.jsx
-import { useState } from "react";
+// src/RegisterLot.jsx
+import React, { useState } from "react";
 import axios from "axios";
 
 function RegisterLot() {
@@ -7,54 +7,72 @@ function RegisterLot() {
     name: "",
     location: "",
     price: "",
-    capacity: ""
+    capacity: "",
   });
   const [status, setStatus] = useState({ type: "", message: "" });
   const [loading, setLoading] = useState(false);
 
-  const handleChange = e => {
+  const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
+    setForm((prev) => ({ ...prev, [name]: value }));
     setStatus({ type: "", message: "" });
   };
 
-  const handleSubmit = async e => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setStatus({ type: "", message: "" });
 
     if (!form.name || !form.location || !form.price) {
       setStatus({
         type: "error",
-        message: "Lot name, location, and price are required."
+        message: "Lot name, location, and price are required.",
       });
       return;
     }
 
     try {
       setLoading(true);
-      await axios.post("http://localhost:5000/api/register", {
+      const res = await axios.post("http://localhost:5000/api/register", {
         name: form.name.trim(),
         location: form.location.trim(),
         price: Number(form.price),
-        capacity: form.capacity ? Number(form.capacity) : undefined
+        capacity: form.capacity ? Number(form.capacity) : undefined,
       });
       setStatus({
         type: "success",
-        message: "Lot registered successfully. Waiting for admin approval."
+        message:
+          res.data?.message ||
+          "Lot registered successfully. Waiting for admin approval.",
       });
       setForm({ name: "", location: "", price: "", capacity: "" });
     } catch (err) {
-      const msg =
-        err.response?.data?.error ||
-        "Something went wrong while registering your lot.";
-      setStatus({ type: "error", message: msg });
+      console.error("RegisterLot error:", err);
+      if (err.response) {
+        setStatus({
+          type: "error",
+          message: err.response.data?.error
+            ? `Server says: ${err.response.data.error}`
+            : `Server error (${err.response.status}). Please try again.`,
+        });
+      } else if (err.request) {
+        setStatus({
+          type: "error",
+          message:
+            "Cannot reach the parking server. Is the backend running on port 5000?",
+        });
+      } else {
+        setStatus({
+          type: "error",
+          message: "Unexpected error. Please try again.",
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div>
+    <>
       <h2 className="section-title">Register Parking Lot</h2>
       <p className="section-help">
         For private owners. Provide basic info so drivers can find your lot.
@@ -120,15 +138,13 @@ function RegisterLot() {
       </form>
 
       {status.message && (
-        <p
-          className={
-            status.type === "error" ? "text-error" : "text-success"
-          }
+        <div
+          className={`alert ${status.type === "error" ? "error" : "success"}`}
         >
           {status.message}
-        </p>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 

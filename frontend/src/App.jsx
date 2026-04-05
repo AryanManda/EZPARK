@@ -1,29 +1,89 @@
-// App.jsx
-import React from "react";
-import FindParking from "./findParking";
-import RegisterLot from "./registerLot";
-import "./App.css"; // make sure this is imported
+// src/App.jsx
+import React, { useState } from "react";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  Link,
+} from "react-router-dom";
+import Login from "./Login.jsx";
+import FindParking from "./FindParking.jsx";
+import RegisterLot from "./RegisterLot.jsx";
+
+function ProtectedRoute({ user, allowedRole, children }) {
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== allowedRole) return <Navigate to="/login" replace />;
+  return children;
+}
 
 function App() {
+  const [user, setUser] = useState(null); // { role: 'driver' | 'owner' }
+
+  const handleLogout = () => setUser(null);
+
   return (
-    <div className="app-root">
-      <header className="header">
-        <div className="header-left">
+    <BrowserRouter>
+      <div className="app-root">
+        <header className="header">
           <h1 className="logo">Smart Parking</h1>
-          <p className="subtitle">Find nearby parking or register your lot.</p>
-        </div>
-      </header>
+          <nav className="nav">
+            {user?.role === "driver" && (
+              <Link to="/driver/find-parking" className="nav-link">
+                Driver
+              </Link>
+            )}
+            {user?.role === "owner" && (
+              <Link to="/owner/register-lot" className="nav-link">
+                Owner
+              </Link>
+            )}
+            {user ? (
+              <button className="btn small" onClick={handleLogout}>
+                Logout
+              </button>
+            ) : (
+              <Link to="/login" className="nav-link">
+                Login
+              </Link>
+            )}
+          </nav>
+        </header>
 
-      <main className="main-grid">
-        <section className="panel">
-          <FindParking />
-        </section>
+        <main className="main-single">
+          <Routes>
+            <Route
+              path="/login"
+              element={<Login onLogin={setUser} user={user} />}
+            />
 
-        <section className="panel">
-          <RegisterLot />
-        </section>
-      </main>
-    </div>
+            <Route
+              path="/driver/find-parking"
+              element={
+                <ProtectedRoute user={user} allowedRole="driver">
+                  <section className="panel">
+                    <FindParking />
+                  </section>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/owner/register-lot"
+              element={
+                <ProtectedRoute user={user} allowedRole="owner">
+                  <section className="panel">
+                    <RegisterLot />
+                  </section>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </main>
+      </div>
+    </BrowserRouter>
   );
 }
 

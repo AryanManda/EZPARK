@@ -1,4 +1,4 @@
-/* App.css */
+/* src/App.css */
 
 /* ---------- Global reset ---------- */
 *,
@@ -15,42 +15,46 @@ body {
   color: #111827;
 }
 
-/* ---------- App layout ---------- */
+/* ---------- Layout ---------- */
 .app-root {
   min-height: 100vh;
 }
 
 .header {
-  padding: 16px 32px;
+  padding: 12px 24px;
   border-bottom: 1px solid #e5e7eb;
   background: #111827;
   color: #f9fafb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .logo {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.3rem;
 }
 
-.subtitle {
-  margin: 4px 0 0;
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-link {
+  color: #e5e7eb;
+  text-decoration: none;
   font-size: 0.9rem;
-  color: #d1d5db;
 }
 
-.main-grid {
-  max-width: 1100px;
-  margin: 24px auto 40px;
+.nav-link:hover {
+  text-decoration: underline;
+}
+
+.main-single {
+  max-width: 520px;
+  margin: 32px auto 40px;
   padding: 0 16px;
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 24px;
-}
-
-@media (max-width: 900px) {
-  .main-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 .panel {
@@ -60,7 +64,7 @@ body {
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
 
-/* ---------- Typography helpers ---------- */
+/* ---------- Typography ---------- */
 .section-title {
   margin: 0 0 4px;
   font-size: 1.25rem;
@@ -77,7 +81,7 @@ body {
   font-size: 0.85rem;
 }
 
-/* ---------- Forms and inputs ---------- */
+/* ---------- Forms ---------- */
 .form-inline {
   display: flex;
   gap: 8px;
@@ -148,10 +152,9 @@ body {
   transform: translateY(-1px);
 }
 
-.btn.ghost {
-  background: transparent;
-  color: #2563eb;
-  padding-inline: 0;
+.btn.small {
+  padding: 6px 10px;
+  font-size: 0.8rem;
 }
 
 .btn:disabled {
@@ -160,17 +163,24 @@ body {
   transform: none;
 }
 
-/* ---------- Messages ---------- */
-.text-error {
-  color: #b91c1c;
+/* ---------- Alerts ---------- */
+.alert {
+  border-radius: 8px;
+  padding: 10px 12px;
   font-size: 0.9rem;
-  margin-top: 4px;
+  margin-top: 10px;
 }
 
-.text-success {
-  color: #15803d;
-  font-size: 0.9rem;
-  margin-top: 8px;
+.alert.error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.alert.success {
+  background: #ecfdf3;
+  color: #166534;
+  border: 1px solid #bbf7d0;
 }
 
 /* ---------- Parking list & cards ---------- */
@@ -206,7 +216,6 @@ body {
   font-size: 0.75rem;
 }
 
-/* status labels */
 .status-ok {
   color: #15803d;
   font-weight: 600;
@@ -217,7 +226,7 @@ body {
   font-weight: 600;
 }
 
-/* ---------- Loading skeleton for list ---------- */
+/* ---------- Skeleton ---------- */
 .list-skeleton {
   margin-top: 12px;
 }

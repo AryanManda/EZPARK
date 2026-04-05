@@ -1,5 +1,5 @@
-// FindParking.jsx
-import { useState } from "react";
+// src/FindParking.jsx
+import React, { useState } from "react";
 import axios from "axios";
 
 function FindParking() {
@@ -8,7 +8,7 @@ function FindParking() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSearch = async e => {
+  const handleSearch = async (e) => {
     e.preventDefault();
     setError("");
     setResults([]);
@@ -25,16 +25,31 @@ function FindParking() {
           location.trim()
         )}`
       );
-      setResults(res.data || []);
+      const data = res.data || [];
+      setResults(data);
+      if (data.length === 0) {
+        setError("No parking found for that location.");
+      }
     } catch (err) {
-      setError("Could not load parking spots. Please try again.");
+      console.error("FindParking error:", err);
+      if (err.response) {
+        setError(
+          `Server error (${err.response.status}). Please try again later.`
+        );
+      } else if (err.request) {
+        setError(
+          "Cannot reach the parking server. Is the backend running on port 5000?"
+        );
+      } else {
+        setError("Unexpected error. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div>
+    <>
       <h2 className="section-title">Find Nearby Parking</h2>
       <p className="section-help">
         Enter a destination like <strong>Downtown</strong> to see available spots.
@@ -46,17 +61,17 @@ function FindParking() {
           className="input"
           placeholder="Destination or area"
           value={location}
-          onChange={e => setLocation(e.target.value)}
+          onChange={(e) => setLocation(e.target.value)}
         />
         <button className="btn primary" type="submit" disabled={loading}>
           {loading ? "Searching..." : "Search"}
         </button>
       </form>
 
-      {error && <p className="text-error">{error}</p>}
-
-      {!loading && !error && results.length === 0 && (
-        <p className="muted">No parking found yet. Try searching a location.</p>
+      {error && (
+        <div className="alert error">
+          {error}
+        </div>
       )}
 
       {loading && (
@@ -66,9 +81,13 @@ function FindParking() {
         </div>
       )}
 
+      {!loading && !error && results.length === 0 && (
+        <p className="muted">No parking found yet. Try searching a location.</p>
+      )}
+
       {results.length > 0 && (
         <div className="list">
-          {results.map(spot => (
+          {results.map((spot) => (
             <article
               key={spot.id ?? spot.name}
               className={`parking-card ${spot.available ? "" : "disabled"}`}
@@ -84,14 +103,11 @@ function FindParking() {
                   {spot.available ? "Available" : "Full"}
                 </span>
               </p>
-              <button className="btn ghost" type="button">
-                View details
-              </button>
             </article>
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
