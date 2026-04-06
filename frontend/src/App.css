@@ -1,0 +1,250 @@
+/* src/App.css */
+
+/* ---------- Global reset ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: #f3f4f6;
+  color: #111827;
+}
+
+/* ---------- Layout ---------- */
+.app-root {
+  min-height: 100vh;
+}
+
+.header {
+  padding: 12px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #111827;
+  color: #f9fafb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-link {
+  color: #e5e7eb;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.nav-link:hover {
+  text-decoration: underline;
+}
+
+.main-single {
+  max-width: 520px;
+  margin: 32px auto 40px;
+  padding: 0 16px;
+}
+
+.panel {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px 20px 24px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+/* ---------- Typography ---------- */
+.section-title {
+  margin: 0 0 4px;
+  font-size: 1.25rem;
+}
+
+.section-help {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.muted {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+/* ---------- Forms ---------- */
+.form-inline {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.form-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-row {
+  display: flex;
+  gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .field-row {
+    flex-direction: column;
+  }
+}
+
+.field-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #4b5563;
+}
+
+.field-hint {
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+.input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 0.95rem;
+  background: #ffffff;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  border-radius: 999px;
+  border: none;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.05s ease;
+}
+
+.btn.primary {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.btn.small {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+/* ---------- Alerts ---------- */
+.alert {
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  margin-top: 10px;
+}
+
+.alert.error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.alert.success {
+  background: #ecfdf3;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+/* ---------- Parking list & cards ---------- */
+.list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.parking-card {
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  padding: 12px 14px;
+  background: #f9fafb;
+}
+
+.parking-card.disabled {
+  opacity: 0.6;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chip {
+  background: #e5f3ff;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+}
+
+.status-ok {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.status-bad {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+/* ---------- Skeleton ---------- */
+.list-skeleton {
+  margin-top: 12px;
+}
+
+.skeleton-row {
+  height: 56px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: pulse 1.4s ease-in-out infinite;
+  margin-bottom: 8px;
+}
+
+@keyframes pulse {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
