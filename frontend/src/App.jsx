@@ -8,8 +8,9 @@ import {
   Link,
 } from "react-router-dom";
 import Login from "./Login.jsx";
-import FindParking from "./FindParking.jsx";
-import RegisterLot from "./RegisterLot.jsx";
+import FindParking from "./findParking.jsx";
+import RegisterLot from "./registerLot.jsx";
+import AccountSettings from "./AccountSettings.jsx";
 
 function ProtectedRoute({ user, allowedRole, children }) {
   if (!user) return <Navigate to="/login" replace />;
@@ -18,7 +19,7 @@ function ProtectedRoute({ user, allowedRole, children }) {
 }
 
 function App() {
-  const [user, setUser] = useState(null); // { role: 'driver' | 'owner' }
+  const [user, setUser] = useState(null); // { role: 'driver' | 'owner', id: string }
 
   const handleLogout = () => setUser(null);
 
@@ -29,9 +30,14 @@ function App() {
           <h1 className="logo">Smart Parking</h1>
           <nav className="nav">
             {user?.role === "driver" && (
-              <Link to="/driver/find-parking" className="nav-link">
-                Driver
-              </Link>
+              <>
+                <Link to="/driver/find-parking" className="nav-link">
+                  Find Parking
+                </Link>
+                <Link to="/driver/account-settings" className="nav-link">
+                  Account
+                </Link>
+              </>
             )}
             {user?.role === "owner" && (
               <Link to="/owner/register-lot" className="nav-link">
@@ -62,7 +68,18 @@ function App() {
               element={
                 <ProtectedRoute user={user} allowedRole="driver">
                   <section className="panel">
-                    <FindParking />
+                    <FindParking userId={user?.id} />
+                  </section>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/driver/account-settings"
+              element={
+                <ProtectedRoute user={user} allowedRole="driver">
+                  <section className="panel">
+                    <AccountSettings userId={user?.id} />
                   </section>
                 </ProtectedRoute>
               }

@@ -16,7 +16,7 @@ function Login({ onLogin, user }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onLogin({ role });
+    onLogin({ role, id: `${role}-1` });
     if (role === "driver") navigate("/driver/find-parking");
     else navigate("/owner/register-lot");
   };
