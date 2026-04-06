@@ -11,6 +11,7 @@ import Login from "./Login.jsx";
 import FindParking from "./findParking.jsx";
 import RegisterLot from "./registerLot.jsx";
 import AccountSettings from "./AccountSettings.jsx";
+import SendAnnouncement from "./sendAnnouncement.jsx";
 
 function ProtectedRoute({ user, allowedRole, children }) {
   if (!user) return <Navigate to="/login" replace />;
@@ -40,9 +41,14 @@ function App() {
               </>
             )}
             {user?.role === "owner" && (
-              <Link to="/owner/register-lot" className="nav-link">
-                Owner
-              </Link>
+              <>
+                <Link to="/owner/register-lot" className="nav-link">
+                  Register Lot
+                </Link>
+                <Link to="/owner/announcements" className="nav-link">
+                  Announcements
+                </Link>
+              </>
             )}
             {user ? (
               <button className="btn small" onClick={handleLogout}>
@@ -91,6 +97,17 @@ function App() {
                 <ProtectedRoute user={user} allowedRole="owner">
                   <section className="panel">
                     <RegisterLot />
+                  </section>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/owner/announcements"
+              element={
+                <ProtectedRoute user={user} allowedRole="owner">
+                  <section className="panel">
+                    <SendAnnouncement />
                   </section>
                 </ProtectedRoute>
               }

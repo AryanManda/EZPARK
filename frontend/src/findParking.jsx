@@ -1,6 +1,7 @@
 // src/findParking.jsx
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import { getCheckoutMessage } from "./useCaseLogic.js";
 
 function FindParking({ userId }) {
   const [location, setLocation] = useState("");
@@ -12,12 +13,20 @@ function FindParking({ userId }) {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionStatus, setSessionStatus] = useState({ type: "", message: "" });
   const [extraHours, setExtraHours] = useState(1);
+  const [paymentMethods, setPaymentMethods] = useState([]);
 
   useEffect(() => {
     axios
       .get(`http://localhost:5000/api/sessions/active?userId=${userId}`)
       .then((res) => setActiveSession(res.data))
       .catch(() => {});
+  }, [userId]);
+
+  useEffect(() => {
+    axios
+      .get(`http://localhost:5000/api/payment-method?userId=${userId}`)
+      .then((res) => setPaymentMethods(res.data || []))
+      .catch(() => setPaymentMethods([]));
   }, [userId]);
 
   const handleSearch = async (e) => {
@@ -97,6 +106,29 @@ function FindParking({ userId }) {
     }
   };
 
+  const handleCheckout = () => {
+    setSessionStatus({ type: "", message: "" });
+
+    const isVehicleSelected = Boolean(activeSession);
+    const isCheckedIn = Boolean(activeSession?.active);
+    const hasPaymentMethod = paymentMethods.length > 0;
+
+    const message = getCheckoutMessage(
+      isVehicleSelected,
+      isCheckedIn,
+      hasPaymentMethod
+    );
+
+    setSessionStatus({
+      type: message === "Check Out Sucessful!" ? "success" : "error",
+      message,
+    });
+
+    if (message === "Check Out Sucessful!") {
+      setActiveSession(null);
+    }
+  };
+
   const formatTime = (iso) =>
     new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -137,6 +169,9 @@ function FindParking({ userId }) {
             </select>
             <button className="btn primary" type="submit" disabled={sessionLoading}>
               {sessionLoading ? "Extending..." : "Extend Time"}
+            </button>
+            <button className="btn" type="button" onClick={handleCheckout} disabled={sessionLoading}>
+              Check Out
             </button>
           </form>
           {sessionStatus.message && (
