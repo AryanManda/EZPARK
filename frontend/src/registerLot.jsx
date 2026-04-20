@@ -1,11 +1,13 @@
-// src/RegisterLot.jsx
 import React, { useState } from "react";
 import axios from "axios";
+
+const API_BASE = "http://localhost:5000/api";
 
 function RegisterLot() {
   const [form, setForm] = useState({
     name: "",
     location: "",
+    fullAddress: "",
     price: "",
     capacity: "",
   });
@@ -22,7 +24,7 @@ function RegisterLot() {
     e.preventDefault();
     setStatus({ type: "", message: "" });
 
-    if (!form.name || !form.location || !form.price) {
+    if (!form.name.trim() || !form.location.trim() || !form.price) {
       setStatus({
         type: "error",
         message: "Lot name, location, and price are required.",
@@ -32,33 +34,36 @@ function RegisterLot() {
 
     try {
       setLoading(true);
-      const res = await axios.post("http://localhost:5000/api/register", {
+      const res = await axios.post(`${API_BASE}/register`, {
         name: form.name.trim(),
         location: form.location.trim(),
+        fullAddress: form.fullAddress.trim(),
         price: Number(form.price),
-        capacity: form.capacity ? Number(form.capacity) : undefined,
+        capacity: form.capacity ? Number(form.capacity) : 1,
       });
+
       setStatus({
         type: "success",
-        message:
-          res.data?.message ||
-          "Lot registered successfully. Waiting for admin approval.",
+        message: res.data?.message || "Parking lot registered successfully.",
       });
-      setForm({ name: "", location: "", price: "", capacity: "" });
+
+      setForm({
+        name: "",
+        location: "",
+        fullAddress: "",
+        price: "",
+        capacity: "",
+      });
     } catch (err) {
-      console.error("RegisterLot error:", err);
       if (err.response) {
         setStatus({
           type: "error",
-          message: err.response.data?.error
-            ? `Server says: ${err.response.data.error}`
-            : `Server error (${err.response.status}). Please try again.`,
+          message: err.response.data?.error || `Server error (${err.response.status}). Please try again.`,
         });
       } else if (err.request) {
         setStatus({
           type: "error",
-          message:
-            "Cannot reach the parking server. Is the backend running on port 5000?",
+          message: "Cannot reach the parking server. Is the backend running on port 5000?",
         });
       } else {
         setStatus({
@@ -75,7 +80,7 @@ function RegisterLot() {
     <>
       <h2 className="section-title">Register Parking Lot</h2>
       <p className="section-help">
-        For private owners. Provide basic info so drivers can find your lot.
+        Add your lot so drivers can search, book, and use it.
       </p>
 
       <form onSubmit={handleSubmit} className="form-vertical">
@@ -91,16 +96,27 @@ function RegisterLot() {
         </label>
 
         <label className="field">
-          <span className="field-label">Location / area *</span>
+          <span className="field-label">Area / location *</span>
           <input
             className="input"
             name="location"
             value={form.location}
             onChange={handleChange}
-            placeholder="Downtown, City"
+            placeholder="Downtown"
+          />
+        </label>
+
+        <label className="field">
+          <span className="field-label">Full address</span>
+          <input
+            className="input"
+            name="fullAddress"
+            value={form.fullAddress}
+            onChange={handleChange}
+            placeholder="123 Main Street"
           />
           <span className="field-hint">
-            Later you can replace this with a full address and map pin.
+            This helps drivers find the exact entrance.
           </span>
         </label>
 
@@ -119,7 +135,7 @@ function RegisterLot() {
           </label>
 
           <label className="field">
-            <span className="field-label">Capacity (optional)</span>
+            <span className="field-label">Capacity *</span>
             <input
               className="input"
               type="number"
@@ -133,14 +149,12 @@ function RegisterLot() {
         </div>
 
         <button className="btn primary" type="submit" disabled={loading}>
-          {loading ? "Registering..." : "Register lot"}
+          {loading ? "Registering..." : "Register Lot"}
         </button>
       </form>
 
       {status.message && (
-        <div
-          className={`alert ${status.type === "error" ? "error" : "success"}`}
-        >
+        <div className={`alert ${status.type === "error" ? "error" : "success"}`}>
           {status.message}
         </div>
       )}
