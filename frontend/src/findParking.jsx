@@ -1,7 +1,7 @@
-// src/findParking.jsx
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { getCheckoutMessage } from "./useCaseLogic.js";
+
+const API_BASE = "http://localhost:5000/api";
 
 function FindParking({ userId }) {
   const [location, setLocation] = useState("");
@@ -14,19 +14,30 @@ function FindParking({ userId }) {
   const [sessionStatus, setSessionStatus] = useState({ type: "", message: "" });
   const [extraHours, setExtraHours] = useState(1);
   const [paymentMethods, setPaymentMethods] = useState([]);
+  const [availableOnly, setAvailableOnly] = useState(false);
+  const [sortBy, setSortBy] = useState("price-asc");
+
+  const loadActiveSession = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/sessions/active?userId=${userId}`);
+      setActiveSession(res.data);
+    } catch {
+      setActiveSession(null);
+    }
+  };
+
+  const loadPaymentMethods = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/payment-method?userId=${userId}`);
+      setPaymentMethods(res.data || []);
+    } catch {
+      setPaymentMethods([]);
+    }
+  };
 
   useEffect(() => {
-    axios
-      .get(`http://localhost:5000/api/sessions/active?userId=${userId}`)
-      .then((res) => setActiveSession(res.data))
-      .catch(() => {});
-  }, [userId]);
-
-  useEffect(() => {
-    axios
-      .get(`http://localhost:5000/api/payment-method?userId=${userId}`)
-      .then((res) => setPaymentMethods(res.data || []))
-      .catch(() => setPaymentMethods([]));
+    loadActiveSession();
+    loadPaymentMethods();
   }, [userId]);
 
   const handleSearch = async (e) => {
@@ -35,21 +46,19 @@ function FindParking({ userId }) {
     setResults([]);
 
     if (!location.trim()) {
-      setError("Please enter a destination or area.");
+      setError("Please enter a destination, lot name, or area.");
       return;
     }
 
     try {
       setLoading(true);
       const res = await axios.get(
-        `http://localhost:5000/api/parking?location=${encodeURIComponent(
-          location.trim()
-        )}`
+        `${API_BASE}/parking?location=${encodeURIComponent(location.trim())}`
       );
-      const data = res.data || [];
+      const data = Array.isArray(res.data) ? res.data : [];
       setResults(data);
       if (data.length === 0) {
-        setError("No parking found for that location.");
+        setError("No parking found for that search.");
       }
     } catch (err) {
       if (err.response) {
@@ -68,13 +77,22 @@ function FindParking({ userId }) {
     try {
       setSessionLoading(true);
       setSessionStatus({ type: "", message: "" });
-      const res = await axios.post("http://localhost:5000/api/sessions/start", {
+      const res = await axios.post(`${API_BASE}/sessions/start`, {
         userId,
         lotName: spot.name,
         hours: 1,
       });
       setActiveSession(res.data.session);
-      setSessionStatus({ type: "success", message: `Booked ${spot.name} for 1 hour.` });
+      setSessionStatus({
+        type: "success",
+        message: `Booked ${spot.name} for 1 hour.`,
+      });
+      if (location.trim()) {
+        const searchRes = await axios.get(
+          `${API_BASE}/parking?location=${encodeURIComponent(location.trim())}`
+        );
+        setResults(searchRes.data || []);
+      }
     } catch (err) {
       setSessionStatus({
         type: "error",
@@ -90,7 +108,7 @@ function FindParking({ userId }) {
     try {
       setSessionLoading(true);
       setSessionStatus({ type: "", message: "" });
-      const res = await axios.post("http://localhost:5000/api/sessions/extend", {
+      const res = await axios.post(`${API_BASE}/sessions/extend`, {
         userId,
         extraHours: Number(extraHours),
       });
@@ -106,28 +124,51 @@ function FindParking({ userId }) {
     }
   };
 
-  const handleCheckout = () => {
-    setSessionStatus({ type: "", message: "" });
+  const handleCheckout = async () => {
+    try {
+      setSessionLoading(true);
+      setSessionStatus({ type: "", message: "" });
 
-    const isVehicleSelected = Boolean(activeSession);
-    const isCheckedIn = Boolean(activeSession?.active);
-    const hasPaymentMethod = paymentMethods.length > 0;
+      const res = await axios.post(`${API_BASE}/sessions/checkout`, {
+        userId,
+      });
 
-    const message = getCheckoutMessage(
-      isVehicleSelected,
-      isCheckedIn,
-      hasPaymentMethod
-    );
-
-    setSessionStatus({
-      type: message === "Check Out Sucessful!" ? "success" : "error",
-      message,
-    });
-
-    if (message === "Check Out Sucessful!") {
+      setSessionStatus({ type: "success", message: res.data.message });
       setActiveSession(null);
+
+      if (location.trim()) {
+        const searchRes = await axios.get(
+          `${API_BASE}/parking?location=${encodeURIComponent(location.trim())}`
+        );
+        setResults(searchRes.data || []);
+      }
+    } catch (err) {
+      setSessionStatus({
+        type: "error",
+        message: err.response?.data?.error || "Failed to check out.",
+      });
+    } finally {
+      setSessionLoading(false);
     }
   };
+
+  const visibleResults = useMemo(() => {
+    let data = [...results];
+
+    if (availableOnly) {
+      data = data.filter((spot) => spot.available);
+    }
+
+    if (sortBy === "price-asc") {
+      data.sort((a, b) => a.price - b.price);
+    } else if (sortBy === "price-desc") {
+      data.sort((a, b) => b.price - a.price);
+    } else if (sortBy === "spots-desc") {
+      data.sort((a, b) => (b.remainingSpots || 0) - (a.remainingSpots || 0));
+    }
+
+    return data;
+  }, [results, availableOnly, sortBy]);
 
   const formatTime = (iso) =>
     new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -136,30 +177,23 @@ function FindParking({ userId }) {
     <>
       <h2 className="section-title">Find Nearby Parking</h2>
       <p className="section-help">
-        Enter a destination like <strong>Downtown</strong> to see available spots.
+        Search by area, address, or lot name to find available parking.
       </p>
 
       {activeSession && (
-        <div
-          className="parking-card"
-          style={{ marginBottom: "16px", background: "#f0fdf4", border: "1px solid #86efac" }}
-        >
+        <div className="parking-card active-session">
           <div className="card-header">
             <h3>Active Session: {activeSession.lotName}</h3>
-            <span className="chip" style={{ background: "#22c55e", color: "#fff" }}>
-              Active
-            </span>
+            <span className="chip chip-active">Active</span>
           </div>
           <p className="muted">
-            Started: {formatTime(activeSession.startTime)}&nbsp;|&nbsp;Ends:{" "}
-            {formatTime(activeSession.endTime)}
+            Started: {formatTime(activeSession.startTime)}&nbsp;|&nbsp;Ends: {formatTime(activeSession.endTime)}
           </p>
-          <form onSubmit={handleExtend} className="form-inline" style={{ marginTop: "10px" }}>
+          <form onSubmit={handleExtend} className="form-inline session-actions">
             <select
               className="input"
               value={extraHours}
               onChange={(e) => setExtraHours(e.target.value)}
-              style={{ maxWidth: "120px" }}
             >
               {[1, 2, 3, 4].map((h) => (
                 <option key={h} value={h}>
@@ -182,11 +216,11 @@ function FindParking({ userId }) {
         </div>
       )}
 
-      <form onSubmit={handleSearch} className="form-inline">
+      <form onSubmit={handleSearch} className="form-inline search-bar">
         <input
           type="text"
           className="input"
-          placeholder="Destination or area"
+          placeholder="Search Downtown, Main St, Lot A..."
           value={location}
           onChange={(e) => setLocation(e.target.value)}
         />
@@ -194,6 +228,29 @@ function FindParking({ userId }) {
           {loading ? "Searching..." : "Search"}
         </button>
       </form>
+
+      <div className="filter-row">
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={availableOnly}
+            onChange={(e) => setAvailableOnly(e.target.checked)}
+          />
+          Available only
+        </label>
+
+        <select className="input filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+          <option value="price-asc">Price: Low to High</option>
+          <option value="price-desc">Price: High to Low</option>
+          <option value="spots-desc">Most Spots</option>
+        </select>
+      </div>
+
+      {paymentMethods.length === 0 && (
+        <div className="alert error">
+          Add a payment method before checkout.
+        </div>
+      )}
 
       {error && <div className="alert error">{error}</div>}
 
@@ -208,31 +265,24 @@ function FindParking({ userId }) {
         <p className="muted">No parking found yet. Try searching a location.</p>
       )}
 
-      {results.length > 0 && (
+      {visibleResults.length > 0 && (
         <div className="list">
-          {results.map((spot) => (
-            <article
-              key={spot.id ?? spot.name}
-              className={`parking-card ${spot.available ? "" : "disabled"}`}
-            >
+          {visibleResults.map((spot) => (
+            <article key={spot.id ?? spot.name} className={`parking-card ${spot.available ? "" : "disabled"}`}>
               <div className="card-header">
                 <h3>{spot.name}</h3>
                 <span className="chip">${spot.price}/hr</span>
               </div>
               <p className="muted">Area: {spot.location}</p>
-              <p>
-                Status:{" "}
-                <span className={spot.available ? "status-ok" : "status-bad"}>
-                  {spot.available ? "Available" : "Full"}
-                </span>
+              <p className="muted">Address: {spot.fullAddress || "Not provided"}</p>
+              <p className="muted">
+                Spots Left: <strong>{spot.remainingSpots ?? "-"}</strong> / {spot.capacity ?? "-"}
               </p>
-              {spot.available && (
-                <button
-                  className="btn primary"
-                  style={{ marginTop: "8px" }}
-                  onClick={() => handleBook(spot)}
-                  disabled={sessionLoading}
-                >
+              <p>
+                Status: <span className={spot.available ? "status-ok" : "status-bad"}>{spot.available ? "Available" : "Full"}</span>
+              </p>
+              {spot.available && !activeSession && (
+                <button className="btn primary" onClick={() => handleBook(spot)} disabled={sessionLoading}>
                   Book (1 hr)
                 </button>
               )}
