@@ -131,5 +131,67 @@ app.post("/api/sessions/extend", (req, res) => {
   res.json({ message: "Time extension successful. Session end time updated.", session });
 });
 
+// soha-UC1: LOGIN 
+
+let users = [
+  { id: 1, email: "user@gmail.com", password: "pass123" }
+];
+
+app.post("/api/login", (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email && !password) {
+    return res.status(400).json({ error: "All fields are required." });
+  }
+  if (!email) {
+    return res.status(400).json({ error: "Email is required." });
+  }
+  if (!password) {
+    return res.status(400).json({ error: "Password is required." });
+  }
+
+  const user = users.find(
+    (u) => u.email === email && u.password === password
+  );
+
+  if (!user) {
+    return res.status(401).json({ error: "Invalid email or password." });
+  }
+
+  res.json({ message: "Login successful!" });
+});
+
+// soha-UC: MANAGE VEHICLES 
+
+let vehicles = [];
+
+app.post("/api/vehicles/add", (req, res) => {
+  const { licensePlate, type } = req.body;
+  if (!licensePlate || !type) {
+    return res.status(400).json({ error: "Vehicle information is required." });
+  }
+  const newVehicle = { id: Date.now(), licensePlate, type };
+  vehicles.push(newVehicle);
+  res.json({ message: "Vehicle added successfully!", vehicle: newVehicle });
+});
+
+app.put("/api/vehicles/update/:id", (req, res) => {
+  const { id } = req.params;
+  const { licensePlate, type } = req.body;
+  const vehicle = vehicles.find((v) => v.id == id);
+  if (!vehicle) return res.status(404).json({ error: "Vehicle not found." });
+  if (!licensePlate || !type) return res.status(400).json({ error: "Invalid vehicle information." });
+  vehicle.licensePlate = licensePlate;
+  vehicle.type = type;
+  res.json({ message: "Vehicle updated successfully!" });
+});
+
+app.delete("/api/vehicles/delete/:id", (req, res) => {
+  const { id } = req.params;
+  const index = vehicles.findIndex((v) => v.id == id);
+  if (index === -1) return res.status(404).json({ error: "Vehicle not found." });
+  vehicles.splice(index, 1);
+  res.json({ message: "Vehicle removed successfully!" });
+});
 
 app.listen(5000, () => console.log("Server running on port 5000"));
