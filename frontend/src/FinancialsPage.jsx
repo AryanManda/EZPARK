@@ -1,5 +1,5 @@
 // src/FinancialsPage.jsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useLot } from "./context/LotContext.jsx";
 import "./dashboard.css";
@@ -27,17 +27,36 @@ export default function FinancialsPage() {
   const [discountEnabled,     setDiscountEnabled]     = useState(pr.durationDiscountPercent > 0);
   const [discountAfterHours,  setDiscountAfterHours]  = useState(pr.durationDiscountAfterHours ?? 2);
   const [discountPercent,     setDiscountPercent]     = useState(pr.durationDiscountPercent ?? 10);
+  const [dailyMaxEnabled,     setDailyMaxEnabled]     = useState(pr.dailyMaximum != null);
+  const [dailyMaximum,        setDailyMaximum]        = useState(pr.dailyMaximum ?? 25);
+  const [minimumEnabled,      setMinimumEnabled]      = useState(pr.minimumCharge != null);
+  const [minimumCharge,       setMinimumCharge]       = useState(pr.minimumCharge ?? 10);
   const [vehicleMultipliers,  setVehicleMultipliers]  = useState({ ...pr.vehicleTypeMultipliers });
 
   // Effective rate calculator state
   const [calcVehicle, setCalcVehicle] = useState("Car");
   const [calcHours,   setCalcHours]   = useState(1);
 
+  useEffect(() => {
+    const next = activeLot.pricingRules;
+    setBaseRate(next.baseRate);
+    setDiscountEnabled(next.durationDiscountPercent > 0);
+    setDiscountAfterHours(next.durationDiscountAfterHours ?? 2);
+    setDiscountPercent(next.durationDiscountPercent ?? 10);
+    setDailyMaxEnabled(next.dailyMaximum != null);
+    setDailyMaximum(next.dailyMaximum ?? 25);
+    setMinimumEnabled(next.minimumCharge != null);
+    setMinimumCharge(next.minimumCharge ?? 10);
+    setVehicleMultipliers({ ...next.vehicleTypeMultipliers });
+  }, [activeLotId, activeLot]);
+
   function handleSaveRules() {
     updatePricingRules(activeLotId, {
       baseRate: Number(baseRate),
       durationDiscountAfterHours: Number(discountAfterHours),
       durationDiscountPercent: discountEnabled ? Number(discountPercent) : 0,
+      dailyMaximum: dailyMaxEnabled ? Number(dailyMaximum) : null,
+      minimumCharge: minimumEnabled ? Number(minimumCharge) : null,
       vehicleTypeMultipliers: {
         car:        Number(vehicleMultipliers.car),
         motorcycle: Number(vehicleMultipliers.motorcycle),
@@ -56,6 +75,12 @@ export default function FinancialsPage() {
     let total  = rate * vmul * hrs;
     if (discountEnabled && hrs > Number(discountAfterHours)) {
       total = total * (1 - Number(discountPercent) / 100);
+    }
+    if (dailyMaxEnabled) {
+      total = Math.min(total, Number(dailyMaximum));
+    }
+    if (minimumEnabled) {
+      total = Math.max(total, Number(minimumCharge));
     }
     return total.toFixed(2);
   }
@@ -84,6 +109,9 @@ export default function FinancialsPage() {
         </NavLink>
         <NavLink to="/owner/manage-lots"  className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}>
           <span className="sidebar-icon">🏢</span> Manage Lots
+        </NavLink>
+        <NavLink to="/owner/lot-settings" className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}>
+          <span className="sidebar-icon">⚙</span> Lot Settings
         </NavLink>
       </nav>
 
@@ -193,6 +221,59 @@ export default function FinancialsPage() {
                       />
                     </div>
                   ))}
+                </div>
+              </div>
+
+              <div style={{ marginTop: "16px" }}>
+                <p className="pricing-label" style={{ marginBottom: "10px" }}>Advanced Charge Rules</p>
+                <div className="pricing-fields">
+                  <div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                      <input
+                        type="checkbox"
+                        checked={dailyMaxEnabled}
+                        onChange={(e) => setDailyMaxEnabled(e.target.checked)}
+                      />
+                      <span style={{ color: "var(--muted)", fontSize: "0.82rem" }}>Enable Daily Maximum</span>
+                    </label>
+                    {dailyMaxEnabled && (
+                      <>
+                        <p className="pricing-label">Daily Max ($)</p>
+                        <input
+                          className="input"
+                          type="number"
+                          min="1"
+                          step="0.5"
+                          value={dailyMaximum}
+                          onChange={(e) => setDailyMaximum(e.target.value)}
+                        />
+                      </>
+                    )}
+                  </div>
+
+                  <div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                      <input
+                        type="checkbox"
+                        checked={minimumEnabled}
+                        onChange={(e) => setMinimumEnabled(e.target.checked)}
+                      />
+                      <span style={{ color: "var(--muted)", fontSize: "0.82rem" }}>Enable Minimum Charge</span>
+                    </label>
+                    {minimumEnabled && (
+                      <>
+                        <p className="pricing-label">Minimum Charge ($)</p>
+                        <input
+                          className="input"
+                          type="number"
+                          min="1"
+                          step="0.5"
+                          value={minimumCharge}
+                          onChange={(e) => setMinimumCharge(e.target.value)}
+                        />
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 

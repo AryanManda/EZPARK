@@ -14,14 +14,24 @@ const STATUS_STYLE = {
 
 // ── Spot Edit Modal (FR-04 vehicle type, FR-05 time limit) ─
 function SpotEditModal({ spot, onSave, onClose }) {
+  const [status,           setStatus]           = useState(spot.status);
   const [vehicleType,      setVehicleType]      = useState(spot.vehicleType ?? "All");
   const [timeLimitEnabled, setTimeLimitEnabled] = useState(spot.timeLimitMinutes != null);
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(spot.timeLimitMinutes ?? 60);
+  const [overrideReason,   setOverrideReason]   = useState(spot.overrideReason ?? "");
+  const [error,            setError]            = useState("");
 
   function handleSave() {
+    if (spot.status === "occupied" && status === "reserved") {
+      setError("Cannot reserve this spot because it is currently occupied.");
+      return;
+    }
+
     onSave({
+      status,
       vehicleType,
       timeLimitMinutes: timeLimitEnabled ? Number(timeLimitMinutes) : null,
+      overrideReason: overrideReason.trim() || null,
     });
   }
 
@@ -34,6 +44,23 @@ function SpotEditModal({ spot, onSave, onClose }) {
         </div>
 
         <hr className="modal-divider" />
+
+        <div style={{ marginBottom: "16px" }}>
+          <p className="pricing-label" style={{ marginBottom: "8px" }}>Spot Status</p>
+          <select
+            className="input"
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value);
+              setError("");
+            }}
+            style={{ width: "100%" }}
+          >
+            <option value="available">Available</option>
+            <option value="reserved">Reserved</option>
+            <option value="occupied">Occupied</option>
+          </select>
+        </div>
 
         {/* FR-04: Vehicle Type */}
         <div style={{ marginBottom: "16px" }}>
@@ -73,6 +100,20 @@ function SpotEditModal({ spot, onSave, onClose }) {
             </div>
           )}
         </div>
+
+        <div style={{ marginBottom: "16px" }}>
+          <p className="pricing-label">Override Note (optional)</p>
+          <input
+            className="input"
+            type="text"
+            value={overrideReason}
+            onChange={(e) => setOverrideReason(e.target.value)}
+            placeholder="e.g. Reserved for maintenance"
+            style={{ width: "100%" }}
+          />
+        </div>
+
+        {error && <div className="alert error">{error}</div>}
 
         <hr className="modal-divider" />
 
@@ -123,6 +164,9 @@ export default function SpotsPage() {
         </NavLink>
         <NavLink to="/owner/manage-lots"  className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}>
           <span className="sidebar-icon">🏢</span> Manage Lots
+        </NavLink>
+        <NavLink to="/owner/lot-settings" className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}>
+          <span className="sidebar-icon">⚙</span> Lot Settings
         </NavLink>
       </nav>
 

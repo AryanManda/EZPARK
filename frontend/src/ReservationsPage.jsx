@@ -1,15 +1,8 @@
 // src/ReservationsPage.jsx
 import React, { useState } from "react";
 import { NavLink } from "react-router-dom";
+import { useLot } from "./context/LotContext.jsx";
 import "./dashboard.css";
-
-const MOCK_RESERVATIONS = [
-  { id: "RES-001", driver: "Marcus Webb",    spot: "A1", start: "Apr 19, 10:00 AM", end: "Apr 19, 12:00 PM", status: "Active" },
-  { id: "RES-002", driver: "Priya Kapoor",   spot: "A3", start: "Apr 19, 3:30 PM",  end: "Apr 19,  5:00 PM", status: "Upcoming" },
-  { id: "RES-003", driver: "Aisha Thompson", spot: "A6", start: "Apr 19, 4:00 PM",  end: "Apr 19,  6:00 PM", status: "Upcoming" },
-  { id: "RES-004", driver: "Leo Nguyen",     spot: "B2", start: "Apr 18, 9:00 AM",  end: "Apr 18, 10:30 AM", status: "Completed" },
-  { id: "RES-005", driver: "Derek Jones",    spot: "B5", start: "Apr 18, 2:00 PM",  end: "Apr 18,  3:00 PM", status: "Cancelled" },
-];
 
 const STATUS_COLORS = {
   Active:    { color: "#5ee3a0" },
@@ -19,14 +12,21 @@ const STATUS_COLORS = {
 };
 
 export default function ReservationsPage() {
+  const { activeLot, activeLotId, cancelReservation } = useLot();
   const [view,   setView]   = useState("list");
   const [filter, setFilter] = useState("All");
 
   const STATUS_OPTS = ["All", "Active", "Upcoming", "Completed", "Cancelled"];
 
-  const visible = MOCK_RESERVATIONS.filter(
+  const reservations = activeLot?.reservations ?? [];
+
+  const visible = reservations.filter(
     (r) => filter === "All" || r.status === filter
   );
+
+  function handleCancelReservation(id) {
+    cancelReservation(activeLotId, id);
+  }
 
   return (
     <div className="owner-layout">
@@ -44,11 +44,17 @@ export default function ReservationsPage() {
         <NavLink to="/owner/financials"   className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}>
           <span className="sidebar-icon">💰</span> Financials
         </NavLink>
+        <NavLink to="/owner/manage-lots"  className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}>
+          <span className="sidebar-icon">🏢</span> Manage Lots
+        </NavLink>
+        <NavLink to="/owner/lot-settings" className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}>
+          <span className="sidebar-icon">⚙</span> Lot Settings
+        </NavLink>
       </nav>
 
       <div className="dash-content">
         <div className="page-header-row">
-          <h2>Reservations</h2>
+          <h2>Reservations — {activeLot.name}</h2>
         </div>
 
         {/* View toggle */}
@@ -91,6 +97,7 @@ export default function ReservationsPage() {
                   <th>Start Time</th>
                   <th>End Time</th>
                   <th>Status</th>
+                    <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -107,12 +114,25 @@ export default function ReservationsPage() {
                           {r.status}
                         </span>
                       </td>
+                      <td>
+                        {(r.status === "Active" || r.status === "Upcoming") ? (
+                          <button
+                            className="btn"
+                            style={{ fontSize: "0.76rem", padding: "4px 10px", color: "var(--danger)" }}
+                            onClick={() => handleCancelReservation(r.id)}
+                          >
+                            Cancel
+                          </button>
+                        ) : (
+                          <span style={{ color: "var(--muted-soft)", fontSize: "0.8rem" }}>—</span>
+                        )}
+                      </td>
                     </tr>
                   ))
                 ) : (
                   Array.from({ length: 3 }).map((_, i) => (
                     <tr key={i}>
-                      {Array.from({ length: 6 }).map((__, j) => (
+                      {Array.from({ length: 7 }).map((__, j) => (
                         <td key={j}><span className="skeleton-cell" style={{ width: "70%" }} /></td>
                       ))}
                     </tr>

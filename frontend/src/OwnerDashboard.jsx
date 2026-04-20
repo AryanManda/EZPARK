@@ -125,6 +125,12 @@ export default function OwnerDashboard() {
   const [selectedSpot, setSelectedSpot] = useState(null);
   const { metrics, spots, pricingRules } = activeLot;
 
+  const isOverdue = (spot) => {
+    if (!spot.sessionStartIso || spot.timeLimitMinutes == null) return false;
+    const elapsed = (Date.now() - new Date(spot.sessionStartIso).getTime()) / 60000;
+    return elapsed > spot.timeLimitMinutes;
+  };
+
   const METRIC_CARDS = [
     { label: "Total Revenue",   value: metrics.totalRevenue,          sub: "This month" },
     { label: "Occupants",       value: String(metrics.occupants),     sub: "Currently parked" },
@@ -151,6 +157,9 @@ export default function OwnerDashboard() {
         <NavLink to="/owner/manage-lots"  className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}>
           <span className="sidebar-icon">🏢</span> Manage Lots
         </NavLink>
+        <NavLink to="/owner/lot-settings" className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}>
+          <span className="sidebar-icon">⚙</span> Lot Settings
+        </NavLink>
       </nav>
 
       <div className="dash-content">
@@ -176,8 +185,8 @@ export default function OwnerDashboard() {
               {spots.map((spot) => (
                 <button
                   key={spot.id}
-                  className={`spot ${spot.status}`}
-                  title={`${spot.id} · ${spot.vehicleType} · ${spot.status}`}
+                  className={`spot ${spot.status}${isOverdue(spot) ? " overdue" : ""}`}
+                  title={`${spot.id} · ${spot.vehicleType} · ${spot.status}${isOverdue(spot) ? " · overdue" : ""}`}
                   onClick={() => setSelectedSpot(spot)}
                   aria-label={`Spot ${spot.id}, ${spot.status}`}
                 >
@@ -192,6 +201,7 @@ export default function OwnerDashboard() {
               <div className="legend-item"><span className="legend-dot available" />Available</div>
               <div className="legend-item"><span className="legend-dot occupied"  />Occupied</div>
               <div className="legend-item"><span className="legend-dot reserved"  />Reserved</div>
+              <div className="legend-item"><span className="legend-dot overdue"   />Overdue</div>
             </div>
           </div>
 
