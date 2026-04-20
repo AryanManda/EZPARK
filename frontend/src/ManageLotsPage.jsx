@@ -56,6 +56,9 @@ export default function ManageLotsPage() {
         <NavLink to="/owner/manage-lots"  className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}>
           <span className="sidebar-icon">🏢</span> Manage Lots
         </NavLink>
+        <NavLink to="/owner/lot-settings" className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}>
+          <span className="sidebar-icon">⚙</span> Lot Settings
+        </NavLink>
       </nav>
 
       <div className="dash-content">

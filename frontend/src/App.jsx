@@ -17,6 +17,7 @@ import SpotsPage from "./SpotsPage.jsx";
 import ReservationsPage from "./ReservationsPage.jsx";
 import FinancialsPage from "./FinancialsPage.jsx";
 import ManageLotsPage from "./ManageLotsPage.jsx";
+import LotSettingsPage from "./LotSettingsPage.jsx";
 import { LotProvider, useLot } from "./context/LotContext.jsx";
 
 function LotSwitcher() {
@@ -162,6 +163,12 @@ function App() {
           <Route path="/owner/manage-lots" element={
             <ProtectedRoute user={user} allowedRole="owner">
               <ManageLotsPage />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/owner/lot-settings" element={
+            <ProtectedRoute user={user} allowedRole="owner">
+              <LotSettingsPage />
             </ProtectedRoute>
           } />
 
