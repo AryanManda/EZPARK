@@ -1,6 +1,6 @@
 // src/AccountSettings.jsx
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import { addPaymentMethod, getPaymentMethods } from "./api/parkingApi";
 
 function AccountSettings({ userId }) {
   const [form, setForm] = useState({ cardHolder: "", cardNumber: "", expiry: "" });
@@ -9,9 +9,8 @@ function AccountSettings({ userId }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    axios
-      .get(`http://localhost:5000/api/payment-method?userId=${userId}`)
-      .then((res) => setSaved(res.data))
+    getPaymentMethods(userId)
+      .then((methods) => setSaved(methods))
       .catch(() => {});
   }, [userId]);
 
@@ -32,14 +31,14 @@ function AccountSettings({ userId }) {
 
     try {
       setLoading(true);
-      const res = await axios.post("http://localhost:5000/api/payment-method", {
+      const res = await addPaymentMethod({
         userId,
         cardHolder: form.cardHolder.trim(),
         cardNumber: form.cardNumber.replace(/\s/g, ""),
         expiry: form.expiry.trim(),
       });
-      setStatus({ type: "success", message: res.data.message });
-      setSaved((prev) => [...prev, res.data.method]);
+      setStatus({ type: "success", message: res.message });
+      setSaved((prev) => [...prev, res.method]);
       setForm({ cardHolder: "", cardNumber: "", expiry: "" });
     } catch (err) {
       setStatus({
