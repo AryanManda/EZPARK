@@ -20,6 +20,11 @@ import ManageLotsPage from "./ManageLotsPage.jsx";
 import LotSettingsPage from "./LotSettingsPage.jsx";
 import { LotProvider, useLot } from "./context/LotContext.jsx";
 
+function FinancialsRoute() {
+  const { activeLotId } = useLot();
+  return <FinancialsPage key={activeLotId} />;
+}
+
 function LotSwitcher() {
   const { lots, activeLotId, setActiveLotId } = useLot();
   return (
@@ -156,7 +161,7 @@ function App() {
 
           <Route path="/owner/financials" element={
             <ProtectedRoute user={user} allowedRole="owner">
-              <FinancialsPage />
+              <FinancialsRoute />
             </ProtectedRoute>
           } />
 

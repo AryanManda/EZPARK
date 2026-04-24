@@ -1,5 +1,5 @@
 // src/OwnerDashboard.jsx
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useLot } from "./context/LotContext.jsx";
 import "./dashboard.css";
@@ -125,11 +125,17 @@ export default function OwnerDashboard() {
   const [selectedSpot, setSelectedSpot] = useState(null);
   const { metrics, spots, pricingRules } = activeLot;
 
-  const isOverdue = (spot) => {
-    if (!spot.sessionStartIso || spot.timeLimitMinutes == null) return false;
-    const elapsed = (Date.now() - new Date(spot.sessionStartIso).getTime()) / 60000;
-    return elapsed > spot.timeLimitMinutes;
-  };
+  const overdueIds = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    return new Set(
+      spots
+        .filter((s) => s.sessionStartIso && s.timeLimitMinutes != null &&
+          (now - new Date(s.sessionStartIso).getTime()) / 60000 > s.timeLimitMinutes)
+        .map((s) => s.id)
+    );
+  }, [spots]);
+  const isOverdue = (spot) => overdueIds.has(spot.id);
 
   const METRIC_CARDS = [
     { label: "Total Revenue",   value: metrics.totalRevenue,          sub: "This month" },

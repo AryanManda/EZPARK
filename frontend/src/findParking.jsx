@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
 const API_BASE = "http://localhost:5000/api";
@@ -17,28 +17,28 @@ function FindParking({ userId }) {
   const [availableOnly, setAvailableOnly] = useState(false);
   const [sortBy, setSortBy] = useState("price-asc");
 
-  const loadActiveSession = async () => {
+  const loadActiveSession = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE}/sessions/active?userId=${userId}`);
       setActiveSession(res.data);
     } catch {
       setActiveSession(null);
     }
-  };
+  }, [userId]);
 
-  const loadPaymentMethods = async () => {
+  const loadPaymentMethods = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE}/payment-method?userId=${userId}`);
       setPaymentMethods(res.data || []);
     } catch {
       setPaymentMethods([]);
     }
-  };
+  }, [userId]);
 
   useEffect(() => {
     loadActiveSession();
     loadPaymentMethods();
-  }, [userId]);
+  }, [loadActiveSession, loadPaymentMethods]);
 
   const handleSearch = async (e) => {
     e.preventDefault();

@@ -1,5 +1,5 @@
 // src/FinancialsPage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useLot } from "./context/LotContext.jsx";
 import "./dashboard.css";
@@ -36,19 +36,6 @@ export default function FinancialsPage() {
   // Effective rate calculator state
   const [calcVehicle, setCalcVehicle] = useState("Car");
   const [calcHours,   setCalcHours]   = useState(1);
-
-  useEffect(() => {
-    const next = activeLot.pricingRules;
-    setBaseRate(next.baseRate);
-    setDiscountEnabled(next.durationDiscountPercent > 0);
-    setDiscountAfterHours(next.durationDiscountAfterHours ?? 2);
-    setDiscountPercent(next.durationDiscountPercent ?? 10);
-    setDailyMaxEnabled(next.dailyMaximum != null);
-    setDailyMaximum(next.dailyMaximum ?? 25);
-    setMinimumEnabled(next.minimumCharge != null);
-    setMinimumCharge(next.minimumCharge ?? 10);
-    setVehicleMultipliers({ ...next.vehicleTypeMultipliers });
-  }, [activeLotId, activeLot]);
 
   function handleSaveRules() {
     updatePricingRules(activeLotId, {
