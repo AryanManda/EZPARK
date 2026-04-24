@@ -153,6 +153,7 @@ export function LotProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useLot() {
   const ctx = useContext(LotContext);
   if (!ctx) throw new Error("useLot must be used inside <LotProvider>");
