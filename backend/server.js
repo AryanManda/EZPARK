@@ -1,5 +1,7 @@
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
+const Database = require("better-sqlite3");
 
 const app = express();
 app.use(
@@ -9,65 +11,246 @@ app.use(
 );
 app.use(express.json());
 
-let parkingDB = [
-  {
-    id: 1,
-    name: "Lot A",
-    location: "Downtown",
-    fullAddress: "101 Main St",
-    price: 10,
-    capacity: 20,
-    remainingSpots: 20,
-    available: true,
-    status: "approved",
-  },
-  {
-    id: 2,
-    name: "Lot B",
-    location: "Downtown",
-    fullAddress: "202 Elm St",
-    price: 8,
-    capacity: 10,
-    remainingSpots: 0,
-    available: false,
-    status: "approved",
-  },
-];
+const db = new Database(path.join(__dirname, "ezpark.sqlite"));
 
-let paymentMethods = [];
-let sessions = [];
+const normalize = (value = "") => String(value).trim().toLowerCase();
+const nowIso = () => new Date().toISOString();
 
-const normalize = (value = "") => value.trim().toLowerCase();
+function parseAllowedTypes(raw) {
+  if (!raw) return ["any"];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map((v) => normalize(v)) : ["any"];
+  } catch {
+    return ["any"];
+  }
+}
 
-const refreshLotAvailability = (lot) => {
-  lot.available = lot.remainingSpots > 0 && lot.status === "approved";
-  return lot;
-};
+function initDb() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      role TEXT NOT NULL CHECK (role IN ('driver', 'owner')),
+      display_name TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS parking_lots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      location TEXT NOT NULL,
+      full_address TEXT NOT NULL,
+      price_per_hour REAL NOT NULL,
+      total_spots INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'approved',
+      allowed_vehicle_types TEXT NOT NULL DEFAULT '["any"]',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS payment_methods (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      card_holder TEXT NOT NULL,
+      masked TEXT NOT NULL,
+      expiry TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS parking_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      lot_id INTEGER NOT NULL,
+      lot_name_snapshot TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      checked_out_at TEXT,
+      payment_method_id INTEGER,
+      active INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS announcements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_id TEXT NOT NULL,
+      lot_id INTEGER NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS announcement_recipients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      announcement_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      delivered_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_active ON parking_sessions(user_id, active);
+    CREATE INDEX IF NOT EXISTS idx_sessions_lot_active ON parking_sessions(lot_id, active);
+    CREATE INDEX IF NOT EXISTS idx_lots_owner ON parking_lots(owner_id);
+  `);
+
+  db.prepare(
+    `INSERT OR IGNORE INTO users (id, role, display_name, created_at) VALUES (?, ?, ?, ?)`
+  ).run("driver-1", "driver", "Driver One", nowIso());
+  db.prepare(
+    `INSERT OR IGNORE INTO users (id, role, display_name, created_at) VALUES (?, ?, ?, ?)`
+  ).run("owner-1", "owner", "Owner One", nowIso());
+
+  const lotCount = db.prepare(`SELECT COUNT(*) AS count FROM parking_lots`).get().count;
+  if (lotCount === 0) {
+    const insertLot = db.prepare(
+      `INSERT INTO parking_lots
+      (owner_id, name, location, full_address, price_per_hour, total_spots, status, allowed_vehicle_types, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, ?)`
+    );
+
+    insertLot.run(
+      "owner-1",
+      "Lot A",
+      "Downtown",
+      "101 Main St",
+      10,
+      20,
+      JSON.stringify(["compact", "suv", "ev", "any"]),
+      nowIso()
+    );
+    insertLot.run(
+      "owner-1",
+      "Lot B",
+      "Downtown",
+      "202 Elm St",
+      8,
+      10,
+      JSON.stringify(["compact", "suv", "any"]),
+      nowIso()
+    );
+  }
+}
+
+function getActiveCheckInsCount(lotId) {
+  return db
+    .prepare(`SELECT COUNT(*) AS count FROM parking_sessions WHERE lot_id = ? AND active = 1`)
+    .get(lotId).count;
+}
+
+function lotToApiModel(lotRow) {
+  const activeCheckIns = getActiveCheckInsCount(lotRow.id);
+  const remainingSpots = Math.max(0, lotRow.total_spots - activeCheckIns);
+  return {
+    id: lotRow.id,
+    ownerId: lotRow.owner_id,
+    name: lotRow.name,
+    location: lotRow.location,
+    fullAddress: lotRow.full_address,
+    price: lotRow.price_per_hour,
+    capacity: lotRow.total_spots,
+    remainingSpots,
+    available: lotRow.status === "approved" && remainingSpots > 0,
+    status: lotRow.status,
+    allowedVehicleTypes: parseAllowedTypes(lotRow.allowed_vehicle_types),
+  };
+}
+
+function getLotForOwner(lotId, ownerId) {
+  return db
+    .prepare(`SELECT * FROM parking_lots WHERE id = ? AND owner_id = ?`)
+    .get(lotId, ownerId);
+}
+
+initDb();
+
+app.post("/api/auth/login", (req, res) => {
+  const { role, displayName = "", userId } = req.body || {};
+  const normalizedRole = normalize(role);
+
+  if (!["driver", "owner"].includes(normalizedRole)) {
+    return res.status(400).json({ error: "Role must be driver or owner." });
+  }
+
+  const finalUserId = String(userId || `${normalizedRole}-1`);
+  const finalDisplayName = String(displayName || `${normalizedRole} user`).trim();
+
+  db.prepare(
+    `INSERT INTO users (id, role, display_name, created_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET role = excluded.role, display_name = excluded.display_name`
+  ).run(finalUserId, normalizedRole, finalDisplayName, nowIso());
+
+  return res.json({
+    user: {
+      id: finalUserId,
+      role: normalizedRole,
+      displayName: finalDisplayName,
+    },
+  });
+});
+
+app.get("/api/auth/me", (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.json(null);
+
+  const user = db
+    .prepare(`SELECT id, role, display_name AS displayName FROM users WHERE id = ?`)
+    .get(String(userId));
+
+  return res.json(user || null);
+});
 
 app.get("/api/parking", (req, res) => {
-  const { location = "" } = req.query;
+  const { location = "", carType = "any" } = req.query;
 
-  if (!location.trim()) {
+  if (!String(location).trim()) {
     return res.status(400).json({ error: "Invalid location" });
   }
 
-  const query = normalize(location);
+  const query = `%${normalize(location)}%`;
+  const normalizedCarType = normalize(carType);
 
-  const results = parkingDB
-    .filter((spot) => spot.status === "approved")
-    .filter(
-      (spot) =>
-        normalize(spot.location).includes(query) ||
-        normalize(spot.fullAddress).includes(query) ||
-        normalize(spot.name).includes(query)
+  const lots = db
+    .prepare(
+      `SELECT * FROM parking_lots
+       WHERE status = 'approved'
+         AND (
+           lower(name) LIKE ?
+           OR lower(location) LIKE ?
+           OR lower(full_address) LIKE ?
+         )`
     )
-    .map((spot) => refreshLotAvailability({ ...spot }));
+    .all(query, query, query)
+    .map(lotToApiModel)
+    .filter((lot) => {
+      if (!normalizedCarType || normalizedCarType === "any") return true;
+      const types = lot.allowedVehicleTypes;
+      return types.includes("any") || types.includes(normalizedCarType);
+    });
 
-  return res.json(results);
+  return res.json(lots);
+});
+
+app.get("/api/owner/lots", (req, res) => {
+  const { ownerId } = req.query;
+  if (!ownerId) {
+    return res.status(400).json({ error: "ownerId required." });
+  }
+
+  const lots = db
+    .prepare(`SELECT * FROM parking_lots WHERE owner_id = ? ORDER BY id DESC`)
+    .all(String(ownerId))
+    .map(lotToApiModel);
+
+  return res.json(lots);
 });
 
 app.post("/api/register", (req, res) => {
-  const { name, location, fullAddress, price, capacity } = req.body;
+  const {
+    ownerId = "owner-1",
+    name,
+    location,
+    fullAddress,
+    price,
+    capacity,
+    allowedVehicleTypes,
+  } = req.body || {};
 
   if (!name || !location || !price) {
     return res.status(400).json({ error: "Lot name, location, and price are required." });
@@ -76,49 +259,62 @@ app.post("/api/register", (req, res) => {
   const parsedPrice = Number(price);
   const parsedCapacity = capacity ? Number(capacity) : 1;
 
-  if (Number.isNaN(parsedPrice) || parsedPrice <= 0) {
+  if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
     return res.status(400).json({ error: "Price must be a valid positive number." });
   }
 
-  if (Number.isNaN(parsedCapacity) || parsedCapacity < 1) {
+  if (!Number.isFinite(parsedCapacity) || parsedCapacity < 1) {
     return res.status(400).json({ error: "Capacity must be at least 1." });
   }
 
-  const newLot = {
-    id: Date.now(),
-    name: name.trim(),
-    location: location.trim(),
-    fullAddress: fullAddress?.trim() || location.trim(),
-    price: parsedPrice,
-    capacity: parsedCapacity,
-    remainingSpots: parsedCapacity,
-    available: true,
-    status: "approved",
-  };
+  const normalizedTypes = Array.isArray(allowedVehicleTypes) && allowedVehicleTypes.length > 0
+    ? allowedVehicleTypes.map((item) => normalize(item)).filter(Boolean)
+    : ["any"];
 
-  parkingDB.push(newLot);
+  const result = db.prepare(
+    `INSERT INTO parking_lots
+      (owner_id, name, location, full_address, price_per_hour, total_spots, status, allowed_vehicle_types, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, ?)`
+  ).run(
+    String(ownerId),
+    String(name).trim(),
+    String(location).trim(),
+    String(fullAddress || location).trim(),
+    parsedPrice,
+    parsedCapacity,
+    JSON.stringify(normalizedTypes),
+    nowIso()
+  );
+
+  const lot = db.prepare(`SELECT * FROM parking_lots WHERE id = ?`).get(result.lastInsertRowid);
 
   return res.json({
     message: "Parking lot registered successfully.",
-    lot: newLot,
+    lot: lotToApiModel(lot),
   });
 });
 
 app.post("/api/payment-method", (req, res) => {
-  const { userId, cardHolder, cardNumber, expiry } = req.body;
+  const { userId, cardHolder, cardNumber, expiry } = req.body || {};
 
   if (!userId || !cardHolder || !cardNumber || !expiry) {
     return res.status(400).json({ error: "All fields are required." });
   }
 
-  const cleanedCard = cardNumber.replace(/\s/g, "");
+  const cleanedCard = String(cardNumber).replace(/\s/g, "");
   if (!/^\d{16}$/.test(cleanedCard)) {
     return res.status(400).json({ error: "Card number must be 16 digits." });
   }
 
   const masked = `**** **** **** ${cleanedCard.slice(-4)}`;
-  const method = { id: Date.now(), userId, cardHolder, masked, expiry };
-  paymentMethods.push(method);
+  const result = db.prepare(
+    `INSERT INTO payment_methods (user_id, card_holder, masked, expiry, created_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(String(userId), String(cardHolder).trim(), masked, String(expiry).trim(), nowIso());
+
+  const method = db
+    .prepare(`SELECT id, user_id AS userId, card_holder AS cardHolder, masked, expiry FROM payment_methods WHERE id = ?`)
+    .get(result.lastInsertRowid);
 
   return res.json({ message: "Payment method saved successfully.", method });
 });
@@ -126,110 +322,264 @@ app.post("/api/payment-method", (req, res) => {
 app.get("/api/payment-method", (req, res) => {
   const { userId } = req.query;
   if (!userId) return res.status(400).json({ error: "userId required." });
-  return res.json(paymentMethods.filter((m) => String(m.userId) === String(userId)));
+
+  const methods = db
+    .prepare(
+      `SELECT id, user_id AS userId, card_holder AS cardHolder, masked, expiry
+       FROM payment_methods
+       WHERE user_id = ?
+       ORDER BY id DESC`
+    )
+    .all(String(userId));
+
+  return res.json(methods);
 });
 
 app.post("/api/sessions/start", (req, res) => {
-  const { userId, lotName, hours } = req.body;
+  const { userId, lotName, lotId, hours } = req.body || {};
 
-  if (!userId || !lotName || !hours || Number(hours) < 1) {
-    return res.status(400).json({ error: "userId, lotName, and hours are required." });
+  if (!userId || (!lotName && !lotId) || !hours || Number(hours) < 1) {
+    return res.status(400).json({ error: "userId, lotName (or lotId), and hours are required." });
   }
 
-  const lot = parkingDB.find((l) => normalize(l.name) === normalize(lotName));
-  if (!lot) {
-    return res.status(404).json({ error: "Parking lot not found." });
-  }
-
-  refreshLotAvailability(lot);
-
-  if (!lot.available || lot.remainingSpots < 1) {
-    return res.status(400).json({ error: "This parking lot is full." });
-  }
-
-  const existingSession = sessions.find((s) => String(s.userId) === String(userId) && s.active);
+  const existingSession = db
+    .prepare(`SELECT id FROM parking_sessions WHERE user_id = ? AND active = 1`)
+    .get(String(userId));
   if (existingSession) {
     return res.status(400).json({ error: "User already has an active parking session." });
   }
 
-  const now = new Date();
-  const endTime = new Date(now.getTime() + Number(hours) * 60 * 60 * 1000);
+  const lot = lotId
+    ? db.prepare(`SELECT * FROM parking_lots WHERE id = ?`).get(Number(lotId))
+    : db.prepare(`SELECT * FROM parking_lots WHERE lower(name) = ?`).get(normalize(lotName));
 
-  lot.remainingSpots -= 1;
-  refreshLotAvailability(lot);
+  if (!lot || lot.status !== "approved") {
+    return res.status(404).json({ error: "Parking lot not found." });
+  }
 
-  const session = {
-    id: Date.now(),
-    userId,
-    lotId: lot.id,
-    lotName: lot.name,
-    startTime: now.toISOString(),
-    endTime: endTime.toISOString(),
-    active: true,
-  };
+  const availableNow = Math.max(0, lot.total_spots - getActiveCheckInsCount(lot.id));
+  if (availableNow < 1) {
+    return res.status(400).json({ error: "This parking lot is full." });
+  }
 
-  sessions.push(session);
+  const startTime = new Date();
+  const endTime = new Date(startTime.getTime() + Number(hours) * 60 * 60 * 1000);
 
-  return res.json({ message: "Parking session started.", session, lot });
+  const result = db.prepare(
+    `INSERT INTO parking_sessions (user_id, lot_id, lot_name_snapshot, start_time, end_time, active)
+     VALUES (?, ?, ?, ?, ?, 1)`
+  ).run(String(userId), lot.id, lot.name, startTime.toISOString(), endTime.toISOString());
+
+  const session = db
+    .prepare(
+      `SELECT
+         id,
+         user_id AS userId,
+         lot_id AS lotId,
+         lot_name_snapshot AS lotName,
+         start_time AS startTime,
+         end_time AS endTime,
+         checked_out_at AS checkedOutAt,
+         active
+       FROM parking_sessions
+       WHERE id = ?`
+    )
+    .get(result.lastInsertRowid);
+
+  const latestLot = db.prepare(`SELECT * FROM parking_lots WHERE id = ?`).get(lot.id);
+
+  return res.json({ message: "Parking session started.", session, lot: lotToApiModel(latestLot) });
 });
 
 app.get("/api/sessions/active", (req, res) => {
   const { userId } = req.query;
   if (!userId) return res.status(400).json({ error: "userId required." });
 
-  const session = sessions.find((s) => String(s.userId) === String(userId) && s.active) || null;
-  return res.json(session);
+  const session = db
+    .prepare(
+      `SELECT
+         id,
+         user_id AS userId,
+         lot_id AS lotId,
+         lot_name_snapshot AS lotName,
+         start_time AS startTime,
+         end_time AS endTime,
+         checked_out_at AS checkedOutAt,
+         active
+       FROM parking_sessions
+       WHERE user_id = ? AND active = 1
+       LIMIT 1`
+    )
+    .get(String(userId));
+
+  return res.json(session || null);
 });
 
 app.post("/api/sessions/extend", (req, res) => {
-  const { userId, extraHours } = req.body;
+  const { userId, extraHours } = req.body || {};
 
   if (!userId || !extraHours || Number(extraHours) < 1) {
     return res.status(400).json({ error: "userId and extraHours are required." });
   }
 
-  const session = sessions.find((s) => String(s.userId) === String(userId) && s.active);
-  if (!session) {
+  const currentSession = db
+    .prepare(`SELECT * FROM parking_sessions WHERE user_id = ? AND active = 1 LIMIT 1`)
+    .get(String(userId));
+  if (!currentSession) {
     return res.status(404).json({ error: "No active session found." });
   }
 
-  const current = new Date(session.endTime);
-  session.endTime = new Date(current.getTime() + Number(extraHours) * 60 * 60 * 1000).toISOString();
+  const currentEnd = new Date(currentSession.end_time);
+  const updatedEnd = new Date(currentEnd.getTime() + Number(extraHours) * 60 * 60 * 1000).toISOString();
+
+  db.prepare(`UPDATE parking_sessions SET end_time = ? WHERE id = ?`).run(updatedEnd, currentSession.id);
+
+  const session = db
+    .prepare(
+      `SELECT
+         id,
+         user_id AS userId,
+         lot_id AS lotId,
+         lot_name_snapshot AS lotName,
+         start_time AS startTime,
+         end_time AS endTime,
+         checked_out_at AS checkedOutAt,
+         active
+       FROM parking_sessions
+       WHERE id = ?`
+    )
+    .get(currentSession.id);
 
   return res.json({ message: "Time extension successful. Session end time updated.", session });
 });
 
 app.post("/api/sessions/checkout", (req, res) => {
-  const { userId } = req.body;
+  const { userId, paymentMethodId } = req.body || {};
 
   if (!userId) {
     return res.status(400).json({ error: "userId is required." });
   }
 
-  const hasPaymentMethod = paymentMethods.some((m) => String(m.userId) === String(userId));
-  if (!hasPaymentMethod) {
+  const methods = db
+    .prepare(`SELECT id FROM payment_methods WHERE user_id = ? ORDER BY id DESC`)
+    .all(String(userId));
+  if (!methods.length) {
     return res.status(400).json({ error: "A payment method is required before checkout." });
   }
 
-  const session = sessions.find((s) => String(s.userId) === String(userId) && s.active);
+  const selectedId = paymentMethodId ? Number(paymentMethodId) : methods[0].id;
+  const selectedMethod = db
+    .prepare(`SELECT id FROM payment_methods WHERE id = ? AND user_id = ?`)
+    .get(selectedId, String(userId));
+
+  if (!selectedMethod) {
+    return res.status(400).json({ error: "Selected payment method is invalid." });
+  }
+
+  const session = db
+    .prepare(`SELECT * FROM parking_sessions WHERE user_id = ? AND active = 1 LIMIT 1`)
+    .get(String(userId));
   if (!session) {
     return res.status(404).json({ error: "No active session found." });
   }
 
-  session.active = false;
-  session.checkedOutAt = new Date().toISOString();
+  db.prepare(
+    `UPDATE parking_sessions
+     SET active = 0, checked_out_at = ?, payment_method_id = ?
+     WHERE id = ?`
+  ).run(nowIso(), selectedMethod.id, session.id);
 
-  const lot = parkingDB.find((l) => l.id === session.lotId);
-  if (lot) {
-    lot.remainingSpots = Math.min(lot.capacity, lot.remainingSpots + 1);
-    refreshLotAvailability(lot);
-  }
+  const updatedSession = db
+    .prepare(
+      `SELECT
+         id,
+         user_id AS userId,
+         lot_id AS lotId,
+         lot_name_snapshot AS lotName,
+         start_time AS startTime,
+         end_time AS endTime,
+         checked_out_at AS checkedOutAt,
+         active
+       FROM parking_sessions
+       WHERE id = ?`
+    )
+    .get(session.id);
+
+  const lot = db.prepare(`SELECT * FROM parking_lots WHERE id = ?`).get(session.lot_id);
 
   return res.json({
     message: "Check Out Successful!",
-    session,
-    lot,
+    session: updatedSession,
+    lot: lot ? lotToApiModel(lot) : null,
   });
 });
 
-app.listen(5000, () => console.log("Server running on port 5000"));
+app.get("/api/announcements/active-count", (req, res) => {
+  const { ownerId, lotId } = req.query;
+  if (!ownerId || !lotId) {
+    return res.status(400).json({ error: "ownerId and lotId are required." });
+  }
+
+  const lot = getLotForOwner(Number(lotId), String(ownerId));
+  if (!lot) {
+    return res.status(404).json({ error: "Lot not found for this owner." });
+  }
+
+  const count = getActiveCheckInsCount(Number(lotId));
+  return res.json({ count });
+});
+
+app.post("/api/announcements/send", (req, res) => {
+  const { ownerId, lotId, message } = req.body || {};
+  if (!ownerId || !lotId || !String(message || "").trim()) {
+    return res.status(400).json({ error: "ownerId, lotId, and message are required." });
+  }
+
+  const lot = getLotForOwner(Number(lotId), String(ownerId));
+  if (!lot) {
+    return res.status(404).json({ error: "Lot not found for this owner." });
+  }
+
+  const recipientRows = db
+    .prepare(`SELECT DISTINCT user_id AS userId FROM parking_sessions WHERE lot_id = ? AND active = 1`)
+    .all(Number(lotId));
+
+  if (!recipientRows.length) {
+    return res.status(400).json({ error: "No active parkers in the selected lot." });
+  }
+
+  const tx = db.transaction(() => {
+    const announcementResult = db.prepare(
+      `INSERT INTO announcements (owner_id, lot_id, message, created_at)
+       VALUES (?, ?, ?, ?)`
+    ).run(String(ownerId), Number(lotId), String(message).trim(), nowIso());
+
+    const insertRecipient = db.prepare(
+      `INSERT INTO announcement_recipients (announcement_id, user_id, delivered_at)
+       VALUES (?, ?, ?)`
+    );
+
+    for (const row of recipientRows) {
+      insertRecipient.run(announcementResult.lastInsertRowid, row.userId, nowIso());
+    }
+
+    return {
+      announcementId: announcementResult.lastInsertRowid,
+      recipients: recipientRows.length,
+    };
+  });
+
+  const result = tx();
+
+  return res.json({
+    message: "Announcement sent.",
+    announcementId: result.announcementId,
+    recipients: result.recipients,
+  });
+});
+
+if (require.main === module) {
+  app.listen(5000, () => console.log("Server running on port 5000"));
+}
+
+module.exports = app;
