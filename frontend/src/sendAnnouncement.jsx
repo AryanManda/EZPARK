@@ -1,33 +1,84 @@
 import React, { useState } from "react";
-import { useLocation } from "react-router-dom";
-import { getOwnerAnnouncementMessage } from "./useCaseLogic.js";
+import { useEffect } from "react";
+import {
+  getAnnouncementActiveCount,
+  getOwnerLots,
+  sendAnnouncementToLot,
+} from "./api/parkingApi";
 
-function SendAnnouncement() {
-  const location = useLocation();
+function SendAnnouncement({ ownerId }) {
   const [message, setMessage] = useState("");
-  const [activeParkersCount, setActiveParkersCount] = useState("0");
+  const [lots, setLots] = useState([]);
+  const [lotId, setLotId] = useState("");
+  const [activeParkersCount, setActiveParkersCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [countLoading, setCountLoading] = useState(false);
   const [status, setStatus] = useState({ type: "", message: "" });
 
-  const handleSubmit = (e) => {
+  useEffect(() => {
+    if (!ownerId) return;
+    getOwnerLots(ownerId)
+      .then((ownerLots) => {
+        setLots(ownerLots || []);
+        if (ownerLots?.length) {
+          setLotId(String(ownerLots[0].id));
+        }
+      })
+      .catch(() => {
+        setStatus({ type: "error", message: "Unable to load owner lots." });
+      });
+  }, [ownerId]);
+
+  useEffect(() => {
+    if (!ownerId || !lotId) {
+      setActiveParkersCount(0);
+      return;
+    }
+
+    setCountLoading(true);
+    getAnnouncementActiveCount({ ownerId, lotId })
+      .then((count) => setActiveParkersCount(count))
+      .catch(() => setActiveParkersCount(0))
+      .finally(() => setCountLoading(false));
+  }, [ownerId, lotId]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setStatus({ type: "", message: "" });
 
-    const isAnnouncementTab = location.pathname === "/owner/announcements";
-    const hasInput = Boolean(message.trim());
-    const hasActiveParkers = Number(activeParkersCount) > 0;
+    if (!ownerId || !lotId || !message.trim()) {
+      setStatus({ type: "error", message: "Select a lot and enter an announcement message." });
+      return;
+    }
 
-    const responseMessage = getOwnerAnnouncementMessage(
-      isAnnouncementTab,
-      hasInput,
-      hasActiveParkers
-    );
+    if (Number(activeParkersCount) <= 0) {
+      setStatus({ type: "error", message: "No active parkers in this lot." });
+      return;
+    }
 
-    setStatus({
-      type: responseMessage === "Announcement sent." ? "success" : "error",
-      message: responseMessage,
-    });
+    try {
+      setLoading(true);
+      const response = await sendAnnouncementToLot({
+        ownerId,
+        lotId: Number(lotId),
+        message: message.trim(),
+      });
 
-    if (responseMessage === "Announcement sent.") {
+      setStatus({
+        type: "success",
+        message: `${response.message} Delivered to ${response.recipients} active parker(s).`,
+      });
       setMessage("");
+
+      const count = await getAnnouncementActiveCount({ ownerId, lotId });
+      setActiveParkersCount(count);
+    } catch (err) {
+      setStatus({
+        type: "error",
+        message: err.response?.data?.error || "Failed to send announcement.",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -39,6 +90,25 @@ function SendAnnouncement() {
       </p>
 
       <form onSubmit={handleSubmit} className="form-vertical">
+        <label className="field">
+          <span className="field-label">Parking lot *</span>
+          <select
+            className="input"
+            value={lotId}
+            onChange={(e) => {
+              setLotId(e.target.value);
+              setStatus({ type: "", message: "" });
+            }}
+          >
+            {lots.length === 0 && <option value="">No lots available</option>}
+            {lots.map((lot) => (
+              <option key={lot.id} value={lot.id}>
+                {lot.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label className="field">
           <span className="field-label">Announcement message *</span>
           <textarea
@@ -60,16 +130,14 @@ function SendAnnouncement() {
             type="number"
             min="0"
             value={activeParkersCount}
-            onChange={(e) => {
-              setActiveParkersCount(e.target.value);
-              setStatus({ type: "", message: "" });
-            }}
+            readOnly
             placeholder="0"
           />
+          {countLoading && <span className="field-hint">Refreshing active check-ins...</span>}
         </label>
 
-        <button className="btn primary" type="submit">
-          Send Announcement
+        <button className="btn primary" type="submit" disabled={loading || !lotId}>
+          {loading ? "Sending..." : "Send Announcement"}
         </button>
       </form>
 

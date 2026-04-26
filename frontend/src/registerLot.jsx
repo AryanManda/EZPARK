@@ -1,9 +1,7 @@
 import React, { useState } from "react";
-import axios from "axios";
+import { registerParkingLot } from "./api/parkingApi";
 
-const API_BASE = "http://localhost:5000/api";
-
-function RegisterLot() {
+function RegisterLot({ ownerId }) {
   const [form, setForm] = useState({
     name: "",
     location: "",
@@ -34,7 +32,8 @@ function RegisterLot() {
 
     try {
       setLoading(true);
-      const res = await axios.post(`${API_BASE}/register`, {
+      const res = await registerParkingLot({
+        ownerId,
         name: form.name.trim(),
         location: form.location.trim(),
         fullAddress: form.fullAddress.trim(),
@@ -44,7 +43,7 @@ function RegisterLot() {
 
       setStatus({
         type: "success",
-        message: res.data?.message || "Parking lot registered successfully.",
+        message: res?.message || "Parking lot registered successfully.",
       });
 
       setForm({
@@ -55,12 +54,12 @@ function RegisterLot() {
         capacity: "",
       });
     } catch (err) {
-      if (err.response) {
+      if (err?.response) {
         setStatus({
           type: "error",
           message: err.response.data?.error || `Server error (${err.response.status}). Please try again.`,
         });
-      } else if (err.request) {
+      } else if (err?.request) {
         setStatus({
           type: "error",
           message: "Cannot reach the parking server. Is the backend running on port 5000?",

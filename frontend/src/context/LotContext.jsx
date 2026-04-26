@@ -1,35 +1,192 @@
 // src/context/LotContext.jsx
-import React, { createContext, useContext, useState } from "react";
-import { INITIAL_LOTS } from "../utils/mockLots.js";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { getOwnerLots } from "../api/parkingApi.js";
 
 const LotContext = createContext(null);
 
-export function LotProvider({ children }) {
-  const [lots, setLots] = useState(INITIAL_LOTS);
-  const [activeLotId, setActiveLotId] = useState(INITIAL_LOTS[0].id);
+const AUTH_STORAGE_KEY = "ezpark-auth-user";
 
-  const activeLot = lots.find((l) => l.id === activeLotId) ?? lots[0];
+function readOwnerIdFromSession() {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed?.role === "owner" ? parsed.id : null;
+  } catch {
+    return null;
+  }
+}
 
-  function addLot({ name, address }) {
-    const newLot = {
-      id: `lot-${Date.now()}`,
-      name,
-      address,
-      metrics: { totalRevenue: "$0", occupants: 0, reservations: 0, availableSpots: 0 },
-      pricingRules: {
-        baseRate: 2.0,
-        durationMultiplier: 1.0,
-        durationDiscountAfterHours: 4,
-        durationDiscountPercent: 10,
-        dailyMaximum: null,
-        minimumCharge: null,
-        vehicleTypeMultipliers: { car: 1.0, motorcycle: 0.5, ev: 1.2 },
-      },
-      defaultTimeLimitMinutes: null,
-      spots: [],
-      reservations: [],
+function formatCurrency(value) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: value % 1 === 0 ? 0 : 2,
+  }).format(value);
+}
+
+function toVehicleLabel(type) {
+  switch (String(type || "").toLowerCase()) {
+    case "compact":
+    case "car":
+      return "Car";
+    case "motorcycle":
+      return "Motorcycle";
+    case "ev":
+      return "EV";
+    default:
+      return "All";
+  }
+}
+
+function createDefaultPricingRules(baseRate) {
+  return {
+    baseRate,
+    durationMultiplier: 1.0,
+    durationDiscountAfterHours: 4,
+    durationDiscountPercent: 10,
+    dailyMaximum: null,
+    minimumCharge: null,
+    vehicleTypeMultipliers: { car: 1.0, motorcycle: 0.5, ev: 1.2 },
+  };
+}
+
+function createGeneratedSpots(capacity, occupiedCount, allowedVehicleTypes, previousSpots = []) {
+  const spotTotal = Math.max(1, Number(capacity) || 1);
+  const occupiedTotal = Math.max(0, Math.min(spotTotal, Number(occupiedCount) || 0));
+  const vehicleTypes = allowedVehicleTypes?.length ? allowedVehicleTypes : ["All"];
+
+  return Array.from({ length: spotTotal }, (_, index) => {
+    const previousSpot = previousSpots[index];
+    const rowLetter = String.fromCharCode(65 + Math.floor(index / 10));
+    const rowNumber = (index % 10) + 1;
+    const status = index < occupiedTotal ? "occupied" : "available";
+
+    return {
+      id: previousSpot?.id || `${rowLetter}${rowNumber}`,
+      status: previousSpot?.status || status,
+      vehicleType: previousSpot?.vehicleType || toVehicleLabel(vehicleTypes[index % vehicleTypes.length]),
+      timeLimitMinutes: previousSpot?.timeLimitMinutes ?? null,
+      driver: previousSpot?.driver ?? null,
+      car: previousSpot?.car ?? null,
+      plate: previousSpot?.plate ?? null,
+      time: previousSpot?.time ?? null,
+      sessionStartIso: previousSpot?.sessionStartIso ?? null,
+      overrideReason: previousSpot?.overrideReason ?? null,
     };
-    setLots((prev) => [...prev, newLot]);
+  });
+}
+
+function createFallbackLot() {
+  return {
+    id: "",
+    backendLotId: null,
+    ownerId: "",
+    name: "Loading...",
+    address: "",
+    defaultTimeLimitMinutes: null,
+    metrics: {
+      totalRevenue: "$0",
+      occupants: 0,
+      reservations: 0,
+      availableSpots: 0,
+    },
+    pricingRules: createDefaultPricingRules(0),
+    spots: [],
+    reservations: [],
+    allowedVehicleTypes: ["All"],
+  };
+}
+
+function hydrateLot(apiLot, previousLot) {
+  const occupiedCount = Math.max(0, (apiLot.capacity || 0) - (apiLot.remainingSpots || 0));
+  return {
+    id: String(apiLot.id),
+    backendLotId: apiLot.id,
+    ownerId: apiLot.ownerId,
+    name: apiLot.name,
+    address: apiLot.fullAddress || apiLot.location,
+    defaultTimeLimitMinutes: previousLot?.defaultTimeLimitMinutes ?? null,
+    metrics: {
+      totalRevenue: previousLot?.metrics?.totalRevenue || formatCurrency(0),
+      occupants: occupiedCount,
+      reservations: previousLot?.metrics?.reservations ?? 0,
+      availableSpots: apiLot.remainingSpots ?? 0,
+    },
+    pricingRules: previousLot?.pricingRules || createDefaultPricingRules(Number(apiLot.price) || 0),
+    spots: createGeneratedSpots(
+      apiLot.capacity,
+      occupiedCount,
+      apiLot.allowedVehicleTypes?.map(toVehicleLabel),
+      previousLot?.spots
+    ),
+    reservations: previousLot?.reservations || [],
+    allowedVehicleTypes: apiLot.allowedVehicleTypes?.map(toVehicleLabel) || ["All"],
+  };
+}
+
+export function LotProvider({ children, user }) {
+  const [lots, setLots] = useState([]);
+  const [activeLotId, setActiveLotId] = useState("");
+  const [lotsLoading, setLotsLoading] = useState(false);
+
+  useEffect(() => {
+    const ownerId = user?.role === "owner" ? user.id : readOwnerIdFromSession();
+    if (!ownerId) {
+      setLots([]);
+      setActiveLotId("");
+      return;
+    }
+
+    let mounted = true;
+    setLotsLoading(true);
+
+    getOwnerLots(ownerId)
+      .then((ownerLots) => {
+        if (!mounted) return;
+
+        setLots((previousLots) => {
+          const nextLots = (ownerLots || []).map((apiLot) => {
+            const previousLot = previousLots.find((lot) => lot.backendLotId === apiLot.id);
+            return hydrateLot(apiLot, previousLot);
+          });
+
+          setActiveLotId((currentActiveLotId) => {
+            if (nextLots.some((lot) => lot.id === currentActiveLotId)) {
+              return currentActiveLotId;
+            }
+            return nextLots[0]?.id || "";
+          });
+
+          return nextLots;
+        });
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setLots([]);
+        setActiveLotId("");
+      })
+      .finally(() => {
+        if (mounted) setLotsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id, user?.role]);
+
+  const activeLot = lots.find((l) => l.id === activeLotId) ?? lots[0] ?? createFallbackLot();
+
+  function addLot(apiLot) {
+    setLots((prev) => [hydrateLot(apiLot), ...prev]);
+    setActiveLotId(String(apiLot.id));
+  }
+
+  function updateLot(apiLot) {
+    setLots((prev) =>
+      prev.map((lot) =>
+        lot.backendLotId === apiLot.id ? hydrateLot(apiLot, lot) : lot
+      )
+    );
   }
 
   function deleteLot(id) {
@@ -138,8 +295,10 @@ export function LotProvider({ children }) {
         lots,
         activeLotId,
         activeLot,
+        lotsLoading,
         setActiveLotId,
         addLot,
+        updateLot,
         deleteLot,
         updateSpot,
         updateSpotStatus,

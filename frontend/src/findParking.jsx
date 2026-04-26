@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addPaymentMethod,
   checkoutSession,
   extendSession,
   getActiveSession,
-  getParking,
+  getParkingWithFilters,
   getPaymentMethods,
   startSession,
 } from "./api/parkingApi";
@@ -26,6 +27,11 @@ function FindParking({ userId }) {
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [availableOnly, setAvailableOnly] = useState(false);
   const [sortBy, setSortBy] = useState("price-asc");
+  const [carType, setCarType] = useState("any");
+
+  const [checkoutFlowOpen, setCheckoutFlowOpen] = useState(false);
+  const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState("");
+  const [newCardForm, setNewCardForm] = useState({ cardHolder: "", cardNumber: "", expiry: "" });
 
   const loadActiveSession = useCallback(async () => {
     try {
@@ -50,22 +56,22 @@ function FindParking({ userId }) {
     loadPaymentMethods();
   }, [loadActiveSession, loadPaymentMethods]);
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
+  const loadParkingResults = useCallback(async (searchLocation = "") => {
     setError("");
-    setResults([]);
-
-    if (!location.trim()) {
-      setError("Please enter a destination, lot name, or area.");
-      return;
-    }
 
     try {
       setLoading(true);
-      const data = await getParking(location.trim());
+      const data = await getParkingWithFilters({
+        location: searchLocation,
+        carType,
+      });
       setResults(data);
       if (data.length === 0) {
-        setError("No parking found for that search.");
+        setError(
+          searchLocation
+            ? "No parking found for that search."
+            : "No parking lots are available right now."
+        );
       }
     } catch (err) {
       if (err.response) {
@@ -78,6 +84,15 @@ function FindParking({ userId }) {
     } finally {
       setLoading(false);
     }
+  }, [carType]);
+
+  useEffect(() => {
+    loadParkingResults(location.trim());
+  }, [carType, loadParkingResults]);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    await loadParkingResults(location.trim());
   };
 
   const handleBook = async (spot) => {
@@ -92,12 +107,9 @@ function FindParking({ userId }) {
       setActiveSession(res.session);
       setSessionStatus({
         type: "success",
-        message: `Booked ${spot.name} for 1 hour.`,
+        message: `Checked in at ${spot.name} for 1 hour.`,
       });
-      if (location.trim()) {
-        const refreshed = await getParking(location.trim());
-        setResults(refreshed || []);
-      }
+      await loadParkingResults(location.trim());
     } catch (err) {
       setSessionStatus({
         type: "error",
@@ -142,22 +154,54 @@ function FindParking({ userId }) {
     }
   };
 
+  const openCheckoutFlow = () => {
+    setSessionStatus({ type: "", message: "" });
+    setSelectedPaymentMethodId(paymentMethods[0]?.id ? String(paymentMethods[0].id) : "");
+    setCheckoutFlowOpen(true);
+  };
+
+  const closeCheckoutFlow = () => {
+    setCheckoutFlowOpen(false);
+    setNewCardForm({ cardHolder: "", cardNumber: "", expiry: "" });
+  };
+
   const handleCheckout = async () => {
     try {
       setCheckoutLoading(true);
       setSessionStatus({ type: "", message: "" });
 
+      let paymentMethodId = selectedPaymentMethodId;
+
+      if (!paymentMethods.length) {
+        if (!newCardForm.cardHolder || !newCardForm.cardNumber || !newCardForm.expiry) {
+          setSessionStatus({ type: "error", message: "Enter card details to continue checkout." });
+          return;
+        }
+        const saved = await addPaymentMethod({
+          userId,
+          cardHolder: newCardForm.cardHolder.trim(),
+          cardNumber: newCardForm.cardNumber.replace(/\s/g, ""),
+          expiry: newCardForm.expiry.trim(),
+        });
+        paymentMethodId = String(saved?.method?.id || "");
+      }
+
+      if (!paymentMethodId) {
+        setSessionStatus({ type: "error", message: "Select a payment method to continue checkout." });
+        return;
+      }
+
       const res = await checkoutSession({
         userId,
+        paymentMethodId: Number(paymentMethodId),
       });
 
       setSessionStatus({ type: "success", message: res.message });
       setActiveSession(null);
+      closeCheckoutFlow();
+      await loadPaymentMethods();
 
-      if (location.trim()) {
-        const refreshed = await getParking(location.trim());
-        setResults(refreshed || []);
-      }
+      await loadParkingResults(location.trim());
     } catch (err) {
       setSessionStatus({
         type: "error",
@@ -249,10 +293,82 @@ function FindParking({ userId }) {
             <button className="btn primary" type="submit" disabled={extendLoading || checkoutLoading}>
               {extendLoading ? "Extending..." : "Extend Time"}
             </button>
-            <button className="btn" type="button" onClick={handleCheckout} disabled={extendLoading || checkoutLoading}>
+            <button className="btn" type="button" onClick={openCheckoutFlow} disabled={extendLoading || checkoutLoading}>
               {checkoutLoading ? "Checking Out..." : "Check Out"}
             </button>
           </form>
+
+          {checkoutFlowOpen && (
+            <div className="parking-card" style={{ marginTop: "12px" }}>
+              <h3 style={{ marginTop: 0 }}>Complete checkout payment</h3>
+
+              {paymentMethods.length > 0 ? (
+                <label className="field">
+                  <span className="field-label">Select payment account</span>
+                  <select
+                    className="input"
+                    value={selectedPaymentMethodId}
+                    onChange={(e) => setSelectedPaymentMethodId(e.target.value)}
+                    disabled={checkoutLoading}
+                  >
+                    <option value="">Select card...</option>
+                    {paymentMethods.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.masked} ({m.expiry})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="form-vertical">
+                  <p className="muted" style={{ marginTop: 0 }}>
+                    No saved payment account found. Add new card details to proceed.
+                  </p>
+                  <label className="field">
+                    <span className="field-label">Cardholder name</span>
+                    <input
+                      className="input"
+                      value={newCardForm.cardHolder}
+                      onChange={(e) => setNewCardForm((prev) => ({ ...prev, cardHolder: e.target.value }))}
+                      disabled={checkoutLoading}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Card number</span>
+                    <input
+                      className="input"
+                      value={newCardForm.cardNumber}
+                      onChange={(e) => setNewCardForm((prev) => ({ ...prev, cardNumber: e.target.value }))}
+                      placeholder="1234 5678 9012 3456"
+                      maxLength={19}
+                      disabled={checkoutLoading}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Expiry (MM/YY)</span>
+                    <input
+                      className="input"
+                      value={newCardForm.expiry}
+                      onChange={(e) => setNewCardForm((prev) => ({ ...prev, expiry: e.target.value }))}
+                      placeholder="08/27"
+                      maxLength={5}
+                      disabled={checkoutLoading}
+                    />
+                  </label>
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <button className="btn primary" type="button" onClick={handleCheckout} disabled={checkoutLoading}>
+                  {checkoutLoading ? "Processing..." : "Pay and Check Out"}
+                </button>
+                <button className="btn" type="button" onClick={closeCheckoutFlow} disabled={checkoutLoading}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {sessionStatus.message && (
             <div className={`alert ${sessionStatus.type === "error" ? "error" : "success"}`}>
               {sessionStatus.message}
@@ -269,6 +385,17 @@ function FindParking({ userId }) {
           value={location}
           onChange={(e) => setLocation(e.target.value)}
         />
+        <select
+          className="input"
+          value={carType}
+          onChange={(e) => setCarType(e.target.value)}
+          aria-label="Car type"
+        >
+          <option value="any">Any car type</option>
+          <option value="compact">Compact</option>
+          <option value="suv">SUV</option>
+          <option value="ev">EV</option>
+        </select>
         <button className="btn primary" type="submit" disabled={loading}>
           {loading ? "Searching..." : "Search"}
         </button>
@@ -328,7 +455,7 @@ function FindParking({ userId }) {
               </p>
               {spot.available && !activeSession && (
                 <button className="btn primary" onClick={() => handleBook(spot)} disabled={bookingLoading}>
-                  {bookingLoading ? "Booking..." : "Book (1 hr)"}
+                  {bookingLoading ? "Checking In..." : "Check In (1 hr)"}
                 </button>
               )}
             </article>

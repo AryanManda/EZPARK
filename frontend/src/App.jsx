@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -19,6 +19,7 @@ import FinancialsPage from "./FinancialsPage.jsx";
 import ManageLotsPage from "./ManageLotsPage.jsx";
 import LotSettingsPage from "./LotSettingsPage.jsx";
 import { LotProvider, useLot } from "./context/LotContext.jsx";
+import { clearAuthSession, getAuthSession } from "./api/parkingApi";
 
 function FinancialsRoute() {
   const { activeLotId } = useLot();
@@ -27,6 +28,8 @@ function FinancialsRoute() {
 
 function LotSwitcher() {
   const { lots, activeLotId, setActiveLotId } = useLot();
+  if (!lots.length) return null;
+
   return (
     <select
       className="lot-switcher"
@@ -49,11 +52,45 @@ function ProtectedRoute({ user, allowedRole, children }) {
 
 function App() {
   const [user, setUser] = useState(null); // { role: 'driver' | 'owner', id: string }
+  const [authBootstrapped, setAuthBootstrapped] = useState(false);
 
-  const handleLogout = () => setUser(null);
+  useEffect(() => {
+    let mounted = true;
+    getAuthSession()
+      .then((sessionUser) => {
+        if (!mounted) return;
+        setUser(sessionUser || null);
+      })
+      .finally(() => {
+        if (mounted) setAuthBootstrapped(true);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleLogout = () => {
+    clearAuthSession();
+    setUser(null);
+  };
+
+  if (!authBootstrapped) {
+    return (
+      <LotProvider user={user}>
+        <div className="app-root">
+          <main className="main-single">
+            <section className="panel">
+              <p className="muted">Loading session...</p>
+            </section>
+          </main>
+        </div>
+      </LotProvider>
+    );
+  }
 
   return (
-    <LotProvider>
+    <LotProvider user={user}>
     <BrowserRouter>
       <div className="app-root">
         <header className="header">
@@ -124,7 +161,7 @@ function App() {
             <ProtectedRoute user={user} allowedRole="owner">
               <main className="main-single">
                 <section className="panel">
-                  <RegisterLot />
+                  <RegisterLot ownerId={user?.id} />
                 </section>
               </main>
             </ProtectedRoute>
@@ -134,7 +171,7 @@ function App() {
             <ProtectedRoute user={user} allowedRole="owner">
               <main className="main-single">
                 <section className="panel">
-                  <SendAnnouncement />
+                  <SendAnnouncement ownerId={user?.id} />
                 </section>
               </main>
             </ProtectedRoute>

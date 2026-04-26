@@ -2,25 +2,78 @@
 import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useLot } from "./context/LotContext.jsx";
+import { deleteOwnerLot, registerParkingLot, updateOwnerLot } from "./api/parkingApi";
 import "./dashboard.css";
 
+const AUTH_STORAGE_KEY = "ezpark-auth-user";
+
+function readOwnerIdFromSession() {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed?.id || "owner-1";
+  } catch {
+    return "owner-1";
+  }
+}
+
 export default function ManageLotsPage() {
-  const { lots, activeLotId, setActiveLotId, addLot, deleteLot } = useLot();
+  const { lots, lotsLoading, activeLotId, setActiveLotId, addLot, updateLot, deleteLot } = useLot();
   const navigate = useNavigate();
 
   const [showForm, setShowForm] = useState(false);
+  const [editingLotId, setEditingLotId] = useState(null);
   const [formName, setFormName] = useState("");
   const [formAddress, setFormAddress] = useState("");
   const [formError, setFormError] = useState("");
 
-  function handleSave() {
+  async function handleSave() {
     if (!formName.trim()) { setFormError("Lot name is required."); return; }
     if (!formAddress.trim()) { setFormError("Address is required."); return; }
-    addLot({ name: formName.trim(), address: formAddress.trim() });
+
+    try {
+      const ownerId = readOwnerIdFromSession();
+      const payload = {
+        ownerId,
+        name: formName.trim(),
+        location: formAddress.trim(),
+        fullAddress: formAddress.trim(),
+        price: 5,
+        capacity: 20,
+      };
+
+      if (editingLotId) {
+        const response = await updateOwnerLot(editingLotId, payload);
+        updateLot(response.lot);
+      } else {
+        const response = await registerParkingLot(payload);
+        addLot(response.lot);
+      }
+
+      setFormName("");
+      setFormAddress("");
+      setFormError("");
+      setShowForm(false);
+      setEditingLotId(null);
+    } catch (err) {
+      setFormError(err.response?.data?.error || "Unable to save lot right now.");
+    }
+  }
+
+  function openCreateForm() {
+    setEditingLotId(null);
     setFormName("");
     setFormAddress("");
     setFormError("");
-    setShowForm(false);
+    setShowForm(true);
+  }
+
+  function openEditForm(lot) {
+    setEditingLotId(lot.backendLotId);
+    setFormName(lot.name);
+    setFormAddress(lot.address);
+    setFormError("");
+    setShowForm(true);
   }
 
   function handleSwitch(id) {
@@ -28,13 +81,19 @@ export default function ManageLotsPage() {
     navigate("/owner/dashboard");
   }
 
-  function handleDelete(id) {
+  async function handleDelete(lot) {
     if (lots.length === 1) {
       alert("You must have at least one lot.");
       return;
     }
     if (!window.confirm("Delete this lot? This cannot be undone.")) return;
-    deleteLot(id);
+
+    try {
+      await deleteOwnerLot(lot.backendLotId, readOwnerIdFromSession());
+      deleteLot(lot.id);
+    } catch (err) {
+      alert(err.response?.data?.error || "Unable to delete lot right now.");
+    }
   }
 
   return (
@@ -65,7 +124,7 @@ export default function ManageLotsPage() {
         <div className="page-header-row">
           <h2>Manage Lots</h2>
           {!showForm && (
-            <button className="btn primary" onClick={() => setShowForm(true)}>
+            <button className="btn primary" onClick={openCreateForm}>
               + Add New Lot
             </button>
           )}
@@ -74,7 +133,7 @@ export default function ManageLotsPage() {
         {/* Add New Lot form */}
         {showForm && (
           <div className="dash-card" style={{ marginBottom: "20px" }}>
-            <h3 className="dash-card-title">New Lot</h3>
+            <h3 className="dash-card-title">{editingLotId ? "Edit Lot" : "New Lot"}</h3>
             <div className="form-vertical" style={{ maxWidth: "420px" }}>
               <div className="field">
                 <label className="field-label" htmlFor="lot-name">Lot Name</label>
@@ -100,8 +159,8 @@ export default function ManageLotsPage() {
               </div>
               {formError && <div className="alert error">{formError}</div>}
               <div style={{ display: "flex", gap: "10px" }}>
-                <button className="btn primary" onClick={handleSave}>Save Lot</button>
-                <button className="btn" onClick={() => { setShowForm(false); setFormError(""); }}>Cancel</button>
+                <button className="btn primary" onClick={handleSave}>{editingLotId ? "Update Lot" : "Save Lot"}</button>
+                <button className="btn" onClick={() => { setShowForm(false); setEditingLotId(null); setFormError(""); }}>Cancel</button>
               </div>
             </div>
           </div>
@@ -109,6 +168,12 @@ export default function ManageLotsPage() {
 
         {/* Lot cards */}
         <div className="lot-card-grid">
+          {lotsLoading && lots.length === 0 && (
+            <div className="dash-card">
+              <p className="muted">Loading your lots...</p>
+            </div>
+          )}
+
           {lots.map((lot) => (
             <div
               key={lot.id}
@@ -149,8 +214,15 @@ export default function ManageLotsPage() {
                 )}
                 <button
                   className="btn"
+                  style={{ padding: "6px 10px", fontSize: "0.82rem" }}
+                  onClick={() => openEditForm(lot)}
+                >
+                  Edit
+                </button>
+                <button
+                  className="btn"
                   style={{ padding: "6px 10px", fontSize: "0.82rem", color: "var(--danger)", borderColor: "rgba(214,92,92,0.3)" }}
-                  onClick={() => handleDelete(lot.id)}
+                  onClick={() => handleDelete(lot)}
                   aria-label={`Delete ${lot.name}`}
                 >
                   🗑 Delete
