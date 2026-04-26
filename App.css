@@ -12,7 +12,6 @@
   --surface: #151518;
   --surface-2: #1c1c20;
   --surface-3: #232329;
-  --border: rgba(255, 215, 90, 0.16);
   --border-strong: rgba(255, 215, 90, 0.32);
   --text: #f5f1e8;
   --muted: #b9b1a2;
@@ -333,31 +332,6 @@ select:focus {
     0 0 0 1px rgba(240, 193, 75, 0.08);
 }
 
-.active-session-pulse {
-  animation: activeSessionPulse 1.1s ease;
-}
-
-.extend-preview {
-  margin-top: -4px;
-  margin-bottom: 10px;
-  color: #d9ccb4;
-}
-
-@keyframes activeSessionPulse {
-  0% {
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35),
-      0 0 0 1px rgba(240, 193, 75, 0.08);
-  }
-  35% {
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35),
-      0 0 0 3px rgba(63, 191, 127, 0.35);
-  }
-  100% {
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35),
-      0 0 0 1px rgba(240, 193, 75, 0.08);
-  }
-}
-
 .list-skeleton {
   margin-top: 12px;
 }
@@ -401,4 +375,78 @@ select:focus {
   .nav {
     flex-wrap: wrap;
   }
+}
+
+/* Style info for forms (check in and out) */
+.form-box {
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+  color: var(--text);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Input css */
+.form-box input,
+.form-box select,
+.form-box textarea {
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.75rem;
+  color: var(--text);
+  outline: none;
+  transition: 0.2s ease;
+  margin-top: 0.4rem;
+}
+
+
+/* Label styling */
+.form-box label {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Submit button styling, should be consistent with previous pages in main repo -RW */
+.form-box button {
+  margin-top: 1rem;
+  width: 100%;
+  background: linear-gradient(135deg, var(--gold), var(--gold-strong));
+  color: #1a1406;
+  border: none;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+  box-shadow: 0 8px 20px rgba(212, 160, 23, 0.25);
+}
+
+/* Popup effect when hovering, usual darkening method didnt look good */
+.form-box button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px rgba(212, 160, 23, 0.35);
+}
+
+/* CSS for the checked in vehicles visual below the checkout form */
+.entries-tabs {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+.tab {
+  background: #1c1c20;
+  border: 1px solid #d4af37;
+  border-radius: 10px;
+  padding: 12px;
+  min-width: 200px;
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
 }
