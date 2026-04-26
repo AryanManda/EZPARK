@@ -1,0 +1,23 @@
+# Dependency directories
+node_modules/
+
+# Environment variables (To protect sensitive keys)
+.env
+
+# Database files (Specific to your better-sqlite3 setup)
+*.sqlite
+*.db
+*.db-journal
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDE/Editor folders
+.vscode/
+.idea/
