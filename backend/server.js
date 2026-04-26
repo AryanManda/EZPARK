@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const crypto = require("crypto");
 const Database = require("better-sqlite3");
 
 const app = express();
@@ -15,6 +16,35 @@ const db = new Database(path.join(__dirname, "ezpark.sqlite"));
 
 const normalize = (value = "") => String(value).trim().toLowerCase();
 const nowIso = () => new Date().toISOString();
+
+function hashPassword(password) {
+  return crypto.scryptSync(String(password), "ezpark-auth-salt", 64).toString("hex");
+}
+
+function verifyPassword(password, passwordHash) {
+  if (!passwordHash) return false;
+  return hashPassword(password) === String(passwordHash);
+}
+
+function ensureUserAuthColumns() {
+  const columns = db.prepare(`PRAGMA table_info(users)`).all();
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  if (!columnNames.has("username")) {
+    db.exec(`ALTER TABLE users ADD COLUMN username TEXT`);
+  }
+  if (!columnNames.has("email")) {
+    db.exec(`ALTER TABLE users ADD COLUMN email TEXT`);
+  }
+  if (!columnNames.has("password_hash")) {
+    db.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''`);
+  }
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
+  `);
+}
 
 function parseAllowedTypes(raw) {
   if (!raw) return ["any"];
@@ -89,12 +119,50 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_lots_owner ON parking_lots(owner_id);
   `);
 
+  ensureUserAuthColumns();
+
   db.prepare(
-    `INSERT OR IGNORE INTO users (id, role, display_name, created_at) VALUES (?, ?, ?, ?)`
-  ).run("driver-1", "driver", "Driver One", nowIso());
+    `INSERT OR IGNORE INTO users
+      (id, role, display_name, username, email, password_hash, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    "driver-1",
+    "driver",
+    "Driver One",
+    "driver",
+    "driver@test.com",
+    hashPassword("password123"),
+    nowIso()
+  );
   db.prepare(
-    `INSERT OR IGNORE INTO users (id, role, display_name, created_at) VALUES (?, ?, ?, ?)`
-  ).run("owner-1", "owner", "Owner One", nowIso());
+    `INSERT OR IGNORE INTO users
+      (id, role, display_name, username, email, password_hash, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    "owner-1",
+    "owner",
+    "Owner One",
+    "owner",
+    "owner@test.com",
+    hashPassword("password123"),
+    nowIso()
+  );
+
+  db.prepare(
+    `UPDATE users
+     SET username = COALESCE(NULLIF(username, ''), ?),
+         email = COALESCE(NULLIF(email, ''), ?),
+         password_hash = CASE WHEN password_hash = '' THEN ? ELSE password_hash END
+     WHERE id = ?`
+  ).run("driver", "driver@test.com", hashPassword("password123"), "driver-1");
+
+  db.prepare(
+    `UPDATE users
+     SET username = COALESCE(NULLIF(username, ''), ?),
+         email = COALESCE(NULLIF(email, ''), ?),
+         password_hash = CASE WHEN password_hash = '' THEN ? ELSE password_hash END
+     WHERE id = ?`
+  ).run("owner", "owner@test.com", hashPassword("password123"), "owner-1");
 
   const lotCount = db.prepare(`SELECT COUNT(*) AS count FROM parking_lots`).get().count;
   if (lotCount === 0) {
@@ -160,7 +228,36 @@ function getLotForOwner(lotId, ownerId) {
 initDb();
 
 app.post("/api/auth/login", (req, res) => {
-  const { role, displayName = "", userId } = req.body || {};
+  const { role, displayName = "", userId, identifier, password } = req.body || {};
+
+  if (identifier || password) {
+    if (!String(identifier || "").trim() || !String(password || "").trim()) {
+      return res.status(400).json({ error: "Email/Username and password are required." });
+    }
+
+    const normalizedIdentifier = normalize(identifier);
+    const user = db
+      .prepare(
+        `SELECT id, role, display_name AS displayName, username, email, password_hash AS passwordHash
+         FROM users
+         WHERE lower(email) = ? OR lower(username) = ?
+         LIMIT 1`
+      )
+      .get(normalizedIdentifier, normalizedIdentifier);
+
+    if (!user || !verifyPassword(password, user.passwordHash)) {
+      return res.status(401).json({ error: "Invalid email/username or password." });
+    }
+
+    return res.json({
+      user: {
+        id: user.id,
+        role: user.role,
+        displayName: user.displayName,
+      },
+    });
+  }
+
   const normalizedRole = normalize(role);
 
   if (!["driver", "owner"].includes(normalizedRole)) {
@@ -198,25 +295,24 @@ app.get("/api/auth/me", (req, res) => {
 
 app.get("/api/parking", (req, res) => {
   const { location = "", carType = "any" } = req.query;
-
-  if (!String(location).trim()) {
-    return res.status(400).json({ error: "Invalid location" });
-  }
-
-  const query = `%${normalize(location)}%`;
   const normalizedCarType = normalize(carType);
 
-  const lots = db
-    .prepare(
-      `SELECT * FROM parking_lots
-       WHERE status = 'approved'
-         AND (
-           lower(name) LIKE ?
-           OR lower(location) LIKE ?
-           OR lower(full_address) LIKE ?
-         )`
-    )
-    .all(query, query, query)
+  const normalizedLocation = normalize(location);
+  const rows = normalizedLocation
+    ? db
+        .prepare(
+          `SELECT * FROM parking_lots
+           WHERE status = 'approved'
+             AND (
+               lower(name) LIKE ?
+               OR lower(location) LIKE ?
+               OR lower(full_address) LIKE ?
+             )`
+        )
+        .all(`%${normalizedLocation}%`, `%${normalizedLocation}%`, `%${normalizedLocation}%`)
+    : db.prepare(`SELECT * FROM parking_lots WHERE status = 'approved'`).all();
+
+  const lots = rows
     .map(lotToApiModel)
     .filter((lot) => {
       if (!normalizedCarType || normalizedCarType === "any") return true;
@@ -292,6 +388,90 @@ app.post("/api/register", (req, res) => {
     message: "Parking lot registered successfully.",
     lot: lotToApiModel(lot),
   });
+});
+
+app.patch("/api/owner/lots/:id", (req, res) => {
+  const lotId = Number(req.params.id);
+  const {
+    ownerId,
+    name,
+    location,
+    fullAddress,
+    price,
+    capacity,
+    allowedVehicleTypes,
+  } = req.body || {};
+
+  if (!ownerId) {
+    return res.status(400).json({ error: "ownerId required." });
+  }
+
+  const existingLot = getLotForOwner(lotId, String(ownerId));
+  if (!existingLot) {
+    return res.status(404).json({ error: "Lot not found for this owner." });
+  }
+
+  const nextName = String(name ?? existingLot.name).trim();
+  const nextLocation = String(location ?? existingLot.location).trim();
+  const nextFullAddress = String(fullAddress ?? existingLot.full_address).trim();
+  const nextPrice = price == null ? Number(existingLot.price_per_hour) : Number(price);
+  const nextCapacity = capacity == null ? Number(existingLot.total_spots) : Number(capacity);
+
+  if (!nextName || !nextLocation || !nextFullAddress) {
+    return res.status(400).json({ error: "Lot name, location, and address are required." });
+  }
+
+  if (!Number.isFinite(nextPrice) || nextPrice <= 0) {
+    return res.status(400).json({ error: "Price must be a valid positive number." });
+  }
+
+  if (!Number.isFinite(nextCapacity) || nextCapacity < 1) {
+    return res.status(400).json({ error: "Capacity must be at least 1." });
+  }
+
+  const normalizedTypes = Array.isArray(allowedVehicleTypes) && allowedVehicleTypes.length > 0
+    ? allowedVehicleTypes.map((item) => normalize(item)).filter(Boolean)
+    : parseAllowedTypes(existingLot.allowed_vehicle_types);
+
+  db.prepare(
+    `UPDATE parking_lots
+     SET name = ?,
+         location = ?,
+         full_address = ?,
+         price_per_hour = ?,
+         total_spots = ?,
+         allowed_vehicle_types = ?
+     WHERE id = ? AND owner_id = ?`
+  ).run(
+    nextName,
+    nextLocation,
+    nextFullAddress,
+    nextPrice,
+    nextCapacity,
+    JSON.stringify(normalizedTypes),
+    lotId,
+    String(ownerId)
+  );
+
+  const lot = db.prepare(`SELECT * FROM parking_lots WHERE id = ?`).get(lotId);
+  return res.json({ message: "Parking lot updated successfully.", lot: lotToApiModel(lot) });
+});
+
+app.delete("/api/owner/lots/:id", (req, res) => {
+  const lotId = Number(req.params.id);
+  const ownerId = String(req.query.ownerId || "");
+
+  if (!ownerId) {
+    return res.status(400).json({ error: "ownerId required." });
+  }
+
+  const existingLot = getLotForOwner(lotId, ownerId);
+  if (!existingLot) {
+    return res.status(404).json({ error: "Lot not found for this owner." });
+  }
+
+  db.prepare(`DELETE FROM parking_lots WHERE id = ? AND owner_id = ?`).run(lotId, ownerId);
+  return res.json({ message: "Parking lot deleted successfully." });
 });
 
 app.post("/api/payment-method", (req, res) => {
