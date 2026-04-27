@@ -124,9 +124,20 @@ function initDb() {
       PRIMARY KEY (id, lot_id)
     );
 
+    CREATE TABLE IF NOT EXISTS vehicles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      license_plate TEXT NOT NULL,
+      make TEXT NOT NULL,
+      model TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(user_id, license_plate)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sessions_user_active ON parking_sessions(user_id, active);
     CREATE INDEX IF NOT EXISTS idx_sessions_lot_active ON parking_sessions(lot_id, active);
     CREATE INDEX IF NOT EXISTS idx_lots_owner ON parking_lots(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_vehicles_user ON vehicles(user_id);
   `);
 
   ensureUserAuthColumns();
@@ -203,6 +214,19 @@ function initDb() {
       nowIso()
     );
   }
+
+  db.prepare(
+    `INSERT OR IGNORE INTO vehicles (user_id, license_plate, make, model, created_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run("driver-1", "ABC1234", "Toyota", "Corolla", nowIso());
+  db.prepare(
+    `INSERT OR IGNORE INTO vehicles (user_id, license_plate, make, model, created_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run("driver-1", "XYZ5678", "Honda", "Civic", nowIso());
+  db.prepare(
+    `INSERT OR IGNORE INTO vehicles (user_id, license_plate, make, model, created_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run("driver-1", "DEF9012", "Ford", "Mustang", nowIso());
 }
 
 function getActiveCheckInsCount(lotId) {
@@ -233,6 +257,16 @@ function getLotForOwner(lotId, ownerId) {
   return db
     .prepare(`SELECT * FROM parking_lots WHERE id = ? AND owner_id = ?`)
     .get(lotId, ownerId);
+}
+
+function vehicleToApiModel(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    licensePlate: row.license_plate,
+    make: row.make,
+    model: row.model,
+  };
 }
 
 initDb();
@@ -523,6 +557,84 @@ app.get("/api/payment-method", (req, res) => {
     .all(String(userId));
 
   return res.json(methods);
+});
+
+app.get("/api/vehicles", (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: "userId required." });
+
+  const vehicles = db
+    .prepare(
+      `SELECT id, user_id, license_plate, make, model
+       FROM vehicles
+       WHERE user_id = ?
+       ORDER BY id DESC`
+    )
+    .all(String(userId))
+    .map(vehicleToApiModel);
+
+  return res.json(vehicles);
+});
+
+app.post("/api/vehicles", (req, res) => {
+  const { userId, licensePlate, make, model } = req.body || {};
+
+  if (!userId || !licensePlate || !make || !model) {
+    return res.status(400).json({ error: "userId, licensePlate, make, and model are required." });
+  }
+
+  const cleanPlate = String(licensePlate).trim().toUpperCase();
+  const cleanMake = String(make).trim();
+  const cleanModel = String(model).trim();
+
+  if (!/^[A-Z0-9]{1,8}$/.test(cleanPlate)) {
+    return res.status(400).json({ error: "Invalid plate number. Only letters and numbers allowed (no special characters)." });
+  }
+  if (!/^[a-zA-Z\s]{2,}$/.test(cleanMake)) {
+    return res.status(400).json({ error: "Invalid make. Only letters allowed." });
+  }
+  if (!/^[a-zA-Z0-9\s]{2,}$/.test(cleanModel)) {
+    return res.status(400).json({ error: "Invalid model. Only letters and numbers allowed." });
+  }
+
+  const existing = db
+    .prepare(`SELECT id FROM vehicles WHERE user_id = ? AND license_plate = ?`)
+    .get(String(userId), cleanPlate);
+  if (existing) {
+    return res.status(409).json({ error: "A vehicle with this plate number already exists." });
+  }
+
+  const result = db
+    .prepare(
+      `INSERT INTO vehicles (user_id, license_plate, make, model, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    .run(String(userId), cleanPlate, cleanMake, cleanModel, nowIso());
+
+  const vehicle = db
+    .prepare(`SELECT id, user_id, license_plate, make, model FROM vehicles WHERE id = ?`)
+    .get(result.lastInsertRowid);
+
+  return res.status(201).json({ message: "Vehicle added successfully.", vehicle: vehicleToApiModel(vehicle) });
+});
+
+app.delete("/api/vehicles/:id", (req, res) => {
+  const vehicleId = Number(req.params.id);
+  const userId = String(req.query.userId || "");
+
+  if (!userId) {
+    return res.status(400).json({ error: "userId required." });
+  }
+
+  const existing = db
+    .prepare(`SELECT id FROM vehicles WHERE id = ? AND user_id = ?`)
+    .get(vehicleId, userId);
+  if (!existing) {
+    return res.status(404).json({ error: "Vehicle not found for this user." });
+  }
+
+  db.prepare(`DELETE FROM vehicles WHERE id = ? AND user_id = ?`).run(vehicleId, userId);
+  return res.json({ message: "Vehicle removed successfully!" });
 });
 
 app.post("/api/sessions/start", (req, res) => {

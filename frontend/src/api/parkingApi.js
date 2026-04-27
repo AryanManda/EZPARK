@@ -203,3 +203,20 @@ export async function signupUser({ email, password, role }) {
   }
   return user;
 }
+
+export async function getVehicles(userId) {
+  const res = await http.get(`/vehicles?userId=${encodeURIComponent(userId)}`);
+  return Array.isArray(res.data) ? res.data : [];
+}
+
+export async function addVehicle(payload) {
+  const res = await http.post("/vehicles", payload);
+  return res.data;
+}
+
+export async function deleteVehicleById(vehicleId, userId) {
+  const res = await http.delete(
+    `/vehicles/${encodeURIComponent(vehicleId)}?userId=${encodeURIComponent(userId)}`
+  );
+  return res.data;
+}

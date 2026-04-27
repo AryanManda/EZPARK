@@ -10,6 +10,7 @@ import {
 import Login from "./Login.jsx";
 import SignUp from "./SignUp.jsx";
 import FindParking from "./findParking.jsx";
+import Vehicles from "./Vehicles.jsx";
 import RegisterLot from "./registerLot.jsx";
 import AccountSettings from "./AccountSettings.jsx";
 import SendAnnouncement from "./sendAnnouncement.jsx";
@@ -105,6 +106,9 @@ function App() {
                 <Link to="/driver/account-settings" className="nav-link">
                   Account
                 </Link>
+                <Link to="/driver/vehicles" className="nav-link">
+                  Vehicles
+                </Link>
               </>
             )}
             {user?.role === "owner" && (
@@ -159,6 +163,16 @@ function App() {
               <main className="main-single">
                 <section className="panel">
                   <AccountSettings userId={user?.id} />
+                </section>
+              </main>
+            </ProtectedRoute>
+          } />
+
+          <Route path="/driver/vehicles" element={
+            <ProtectedRoute user={user} allowedRole="driver">
+              <main className="main-single">
+                <section className="panel">
+                  <Vehicles userId={user?.id} />
                 </section>
               </main>
             </ProtectedRoute>
