@@ -38,7 +38,6 @@ function FindParking({ userId }) {
   const [selectedLot, setSelectedLot] = useState(null);
   const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
   const [minimizedAnnouncement, setMinimizedAnnouncement] = useState(null);
-  const [openedAnnouncementLotIds, setOpenedAnnouncementLotIds] = useState([]);
   const announcementDialogRef = useRef(null);
 
   const loadActiveSession = useCallback(async () => {
@@ -124,22 +123,18 @@ function FindParking({ userId }) {
   const selectedLotAnnouncement = selectedLot ? getAnnouncementForLot(selectedLot.id) : null;
 
   const handleLotSelect = (spot) => {
-    setSelectedLot(spot);
+  setSelectedLot(spot);
 
-    const matchedAnnouncement = getAnnouncementForLot(spot.id);
-    if (!matchedAnnouncement) return;
+  const matchedAnnouncement = getAnnouncementForLot(spot.id);
+  if (!matchedAnnouncement) return;
 
-    setMinimizedAnnouncement({
-      ...matchedAnnouncement,
-      lotName: spot.name,
-    });
+  setMinimizedAnnouncement({
+    ...matchedAnnouncement,
+    lotName: spot.name,
+  });
 
-    const hasAlreadyOpened = openedAnnouncementLotIds.includes(spot.id);
-    if (!hasAlreadyOpened) {
-      setAnnouncementModalOpen(true);
-      setOpenedAnnouncementLotIds((prev) => [...prev, spot.id]);
-    }
-  };
+  setAnnouncementModalOpen(true);
+};
 
   const handleBook = async (spot) => {
     try {
@@ -337,6 +332,7 @@ function FindParking({ userId }) {
 
   const handleCloseAnnouncement = () => {
     setAnnouncementModalOpen(false);
+    setMinimizedAnnouncement(null);
   };
 
   const handleRestoreAnnouncement = () => {
