@@ -104,12 +104,23 @@ function FindParking({ userId }) {
   }, [carType]);
 
   useEffect(() => {
-    loadParkingResults(location.trim());
-  }, [carType, loadParkingResults]);
+  const trimmedLocation = location.trim();
+  if (!trimmedLocation) return;
+  loadParkingResults(trimmedLocation);
+}, [carType, loadParkingResults, location]);
 
   const handleSearch = async (e) => {
     e.preventDefault();
-    await loadParkingResults(location.trim());
+
+    const trimmedLocation = location.trim();
+
+    if (!trimmedLocation) {
+      setError("Location is required");
+      setResults([]);
+      return;
+    }
+
+    await loadParkingResults(trimmedLocation);
   };
 
   const getAnnouncementForLot = useCallback(
@@ -470,7 +481,12 @@ function FindParking({ userId }) {
           className="input"
           placeholder="Search Downtown, Main St, Lot A..."
           value={location}
-          onChange={(e) => setLocation(e.target.value)}
+          onChange={(e) => {
+            setLocation(e.target.value);
+            if (error === "Location is required" && e.target.value.trim()) {
+              setError("");
+            }
+          }}
         />
         <select
           className="input"
