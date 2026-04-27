@@ -1,6 +1,6 @@
 // src/context/LotContext.jsx
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { getOwnerLots } from "../api/parkingApi.js";
+import { getOwnerLots, getLotSpots } from "../api/parkingApi.js";
 
 const LotContext = createContext(null);
 
@@ -176,6 +176,46 @@ export function LotProvider({ children, user }) {
 
   const activeLot = lots.find((l) => l.id === activeLotId) ?? lots[0] ?? createFallbackLot();
 
+  // ── Hydrate spots from DB whenever the active lot changes ──
+  const activeLotBackendId = activeLot.backendLotId;
+  const activeOwnerIdForSpots = user?.role === "owner" ? user.id : readOwnerIdFromSession();
+
+  useEffect(() => {
+    if (!activeLotBackendId || !activeOwnerIdForSpots) return;
+    let mounted = true;
+
+    getLotSpots(activeLotBackendId, activeOwnerIdForSpots)
+      .then((apiSpots) => {
+        if (!mounted) return;
+        setLots((prev) =>
+          prev.map((l) =>
+            l.backendLotId !== activeLotBackendId
+              ? l
+              : {
+                  ...l,
+                  spots: apiSpots.map((s) => ({
+                    id: s.id,
+                    status: s.status,
+                    vehicleType: s.vehicleType,
+                    timeLimitMinutes: s.timeLimitMinutes,
+                    overrideReason: s.overrideReason,
+                    driver: null,
+                    car: null,
+                    plate: null,
+                    time: null,
+                    sessionStartIso: null,
+                  })),
+                }
+          )
+        );
+      })
+      .catch(() => {}); // silently keep in-memory spots if fetch fails
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeLotBackendId, activeOwnerIdForSpots]);
+
   function addLot(apiLot) {
     setLots((prev) => [hydrateLot(apiLot), ...prev]);
     setActiveLotId(String(apiLot.id));
@@ -289,6 +329,44 @@ export function LotProvider({ children, user }) {
     return { ok: true };
   }
 
+  function addSpot(lotId, apiSpot) {
+    setLots((prev) =>
+      prev.map((lot) =>
+        lot.id !== lotId
+          ? lot
+          : {
+              ...lot,
+              spots: [
+                ...lot.spots,
+                {
+                  id: apiSpot.id,
+                  status: apiSpot.status,
+                  vehicleType: apiSpot.vehicleType,
+                  timeLimitMinutes: apiSpot.timeLimitMinutes,
+                  overrideReason: apiSpot.overrideReason,
+                  driver: null,
+                  car: null,
+                  plate: null,
+                  time: null,
+                  sessionStartIso: null,
+                },
+              ],
+            }
+      )
+    );
+  }
+
+  function removeSpots(lotId, spotIds) {
+    const idSet = new Set(spotIds);
+    setLots((prev) =>
+      prev.map((lot) =>
+        lot.id !== lotId
+          ? lot
+          : { ...lot, spots: lot.spots.filter((s) => !idSet.has(s.id)) }
+      )
+    );
+  }
+
   return (
     <LotContext.Provider
       value={{
@@ -305,6 +383,8 @@ export function LotProvider({ children, user }) {
         updatePricingRules,
         cancelReservation,
         applyDefaultTimeLimit,
+        addSpot,
+        removeSpots,
       }}
     >
       {children}

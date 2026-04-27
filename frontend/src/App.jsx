@@ -8,6 +8,7 @@ import {
   Link,
 } from "react-router-dom";
 import Login from "./Login.jsx";
+import SignUp from "./SignUp.jsx";
 import FindParking from "./findParking.jsx";
 import RegisterLot from "./registerLot.jsx";
 import AccountSettings from "./AccountSettings.jsx";
@@ -134,6 +135,12 @@ function App() {
           <Route path="/login" element={
             <main className="main-single">
               <Login onLogin={setUser} user={user} />
+            </main>
+          } />
+
+          <Route path="/signup" element={
+            <main className="main-single">
+              <SignUp onLogin={setUser} user={user} />
             </main>
           } />
 
