@@ -694,6 +694,28 @@ app.post("/api/sessions/checkout", (req, res) => {
   });
 });
 
+app.get("/api/announcements", (req, res) => {
+  const { userId } = req.query;
+
+  if (!userId) {
+    return res.status(400).json({ error: "userId required." });
+  }
+
+  const rows = db.prepare(`
+    SELECT 
+      a.id,
+      a.message,
+      a.created_at AS createdAt,
+      a.lot_id AS lotId
+    FROM announcement_recipients ar
+    JOIN announcements a ON a.id = ar.announcement_id
+    WHERE ar.user_id = ?
+    ORDER BY a.created_at DESC
+  `).all(String(userId));
+
+  return res.json(rows);
+});
+
 app.get("/api/announcements/active-count", (req, res) => {
   const { ownerId, lotId } = req.query;
   if (!ownerId || !lotId) {
