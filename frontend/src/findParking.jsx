@@ -8,6 +8,7 @@ import {
   getPaymentMethods,
   startSession,
 } from "./api/parkingApi";
+import DriverAnnouncements from "./DriverAnnouncements";
 
 function FindParking({ userId }) {
   const [location, setLocation] = useState("");
@@ -376,6 +377,8 @@ function FindParking({ userId }) {
           )}
         </div>
       )}
+      <DriverAnnouncements userId={userId} />
+
 
       <form onSubmit={handleSearch} className="form-inline search-bar">
         <input
