@@ -172,3 +172,29 @@ export async function sendAnnouncementToLot(payload) {
   const res = await http.post("/announcements/send", payload);
   return res.data;
 }
+
+export async function getLotSpots(lotId, ownerId) {
+  const res = await http.get(
+    `/lots/${encodeURIComponent(lotId)}/spots?ownerId=${encodeURIComponent(ownerId)}`
+  );
+  return Array.isArray(res.data) ? res.data : [];
+}
+
+export async function addLotSpot(lotId, payload) {
+  const res = await http.post(`/lots/${encodeURIComponent(lotId)}/spots`, payload);
+  return res.data;
+}
+
+export async function deleteLotSpots(lotId, payload) {
+  const res = await http.delete(`/lots/${encodeURIComponent(lotId)}/spots`, { data: payload });
+  return res.data;
+}
+
+export async function signupUser({ email, password, role }) {
+  const res = await http.post("/signup", { email, password, role });
+  const user = res.data?.user || null;
+  if (user) {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+  }
+  return user;
+}

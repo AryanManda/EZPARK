@@ -648,6 +648,25 @@
   letter-spacing: 0.05em;
 }
 
+/* ── Danger button (remove / destructive actions) ────────── */
+
+.btn.danger {
+  background: rgba(214, 92, 92, 0.14);
+  border: 1px solid rgba(214, 92, 92, 0.35);
+  color: #ff9c9c;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: rgba(214, 92, 92, 0.26);
+  border-color: rgba(214, 92, 92, 0.55);
+  color: #ffb3b3;
+}
+
+.btn.danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .lot-card-actions {
   display: flex;
   gap: 8px;

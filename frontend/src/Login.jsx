@@ -1,6 +1,6 @@
 // src/Login.jsx
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { loginUser } from "./api/parkingApi";
 
 function Login({ onLogin, user }) {
@@ -81,6 +81,13 @@ function Login({ onLogin, user }) {
         <button type="submit" className="btn primary">
           {loading ? "Signing in..." : "Log In"}
         </button>
+
+        <p className="field-hint">
+          Don't have an account?{" "}
+          <Link to="/signup" style={{ color: "var(--gold)", textDecoration: "underline" }}>
+            Sign up
+          </Link>
+        </p>
       </form>
     </section>
   );

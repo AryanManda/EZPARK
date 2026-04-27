@@ -114,6 +114,16 @@ function initDb() {
       delivered_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS spots (
+      id TEXT NOT NULL,
+      lot_id INTEGER NOT NULL,
+      vehicle_type TEXT NOT NULL DEFAULT 'All',
+      status TEXT NOT NULL DEFAULT 'available',
+      time_limit_minutes INTEGER,
+      override_reason TEXT,
+      PRIMARY KEY (id, lot_id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sessions_user_active ON parking_sessions(user_id, active);
     CREATE INDEX IF NOT EXISTS idx_sessions_lot_active ON parking_sessions(lot_id, active);
     CREATE INDEX IF NOT EXISTS idx_lots_owner ON parking_lots(owner_id);
@@ -755,6 +765,194 @@ app.post("/api/announcements/send", (req, res) => {
     message: "Announcement sent.",
     announcementId: result.announcementId,
     recipients: result.recipients,
+  });
+});
+
+// ── Spot helpers ──────────────────────────────────────────
+function toVehicleLabel(type) {
+  switch (String(type || "").toLowerCase()) {
+    case "compact":
+    case "car":
+      return "Car";
+    case "motorcycle":
+      return "Motorcycle";
+    case "ev":
+      return "EV";
+    default:
+      return "All";
+  }
+}
+
+function spotToApiModel(row) {
+  return {
+    id: row.id,
+    lotId: row.lot_id,
+    vehicleType: row.vehicle_type,
+    status: row.status,
+    timeLimitMinutes: row.time_limit_minutes ?? null,
+    overrideReason: row.override_reason ?? null,
+  };
+}
+
+function seedSpotsForLot(lot) {
+  const capacity = Math.max(1, Number(lot.total_spots) || 1);
+  const vehicleTypes = parseAllowedTypes(lot.allowed_vehicle_types);
+  const insertSpot = db.prepare(
+    `INSERT OR IGNORE INTO spots (id, lot_id, vehicle_type, status) VALUES (?, ?, ?, 'available')`
+  );
+  const tx = db.transaction(() => {
+    for (let i = 0; i < capacity; i++) {
+      const rowLetter = String.fromCharCode(65 + Math.floor(i / 10));
+      const rowNumber = (i % 10) + 1;
+      const spotId = `${rowLetter}${rowNumber}`;
+      const rawType = vehicleTypes[i % vehicleTypes.length];
+      const vehicleType = toVehicleLabel(rawType);
+      insertSpot.run(spotId, lot.id, vehicleType);
+    }
+  });
+  tx();
+}
+
+// ── GET /api/lots/:lotId/spots ────────────────────────────
+app.get("/api/lots/:lotId/spots", (req, res) => {
+  const lotId = Number(req.params.lotId);
+  const ownerId = String(req.query.ownerId || "");
+
+  if (!ownerId) {
+    return res.status(400).json({ error: "ownerId required." });
+  }
+
+  const lot = getLotForOwner(lotId, ownerId);
+  if (!lot) {
+    return res.status(404).json({ error: "Lot not found for this owner." });
+  }
+
+  let rows = db.prepare(`SELECT * FROM spots WHERE lot_id = ? ORDER BY id`).all(lotId);
+  if (rows.length === 0) {
+    seedSpotsForLot(lot);
+    rows = db.prepare(`SELECT * FROM spots WHERE lot_id = ? ORDER BY id`).all(lotId);
+  }
+
+  return res.json(rows.map(spotToApiModel));
+});
+
+// ── POST /api/lots/:lotId/spots ───────────────────────────
+app.post("/api/lots/:lotId/spots", (req, res) => {
+  const lotId = Number(req.params.lotId);
+  const { ownerId, spotId, vehicleType } = req.body || {};
+
+  if (!ownerId) {
+    return res.status(400).json({ error: "ownerId required." });
+  }
+  const cleanSpotId = String(spotId || "").trim();
+  if (!cleanSpotId) {
+    return res.status(400).json({ error: "spotId is required." });
+  }
+
+  const ALLOWED_VEHICLE_TYPES = ["Car", "Motorcycle", "EV", "All"];
+  const cleanVehicleType = String(vehicleType || "All").trim();
+  if (!ALLOWED_VEHICLE_TYPES.includes(cleanVehicleType)) {
+    return res.status(400).json({ error: `vehicleType must be one of: ${ALLOWED_VEHICLE_TYPES.join(", ")}.` });
+  }
+
+  const lot = getLotForOwner(lotId, String(ownerId));
+  if (!lot) {
+    return res.status(404).json({ error: "Lot not found for this owner." });
+  }
+
+  // Ensure lot is seeded before adding a new spot
+  const existingCount = db.prepare(`SELECT COUNT(*) AS count FROM spots WHERE lot_id = ?`).get(lotId).count;
+  if (existingCount === 0) seedSpotsForLot(lot);
+
+  const duplicate = db.prepare(`SELECT id FROM spots WHERE id = ? AND lot_id = ?`).get(cleanSpotId, lotId);
+  if (duplicate) {
+    return res.status(409).json({ error: `Spot "${cleanSpotId}" already exists in this lot.` });
+  }
+
+  db.prepare(
+    `INSERT INTO spots (id, lot_id, vehicle_type, status) VALUES (?, ?, ?, 'available')`
+  ).run(cleanSpotId, lotId, cleanVehicleType);
+
+  const row = db.prepare(`SELECT * FROM spots WHERE id = ? AND lot_id = ?`).get(cleanSpotId, lotId);
+  return res.status(201).json(spotToApiModel(row));
+});
+
+// ── DELETE /api/lots/:lotId/spots ─────────────────────────
+app.delete("/api/lots/:lotId/spots", (req, res) => {
+  const lotId = Number(req.params.lotId);
+  const { ownerId, spotIds } = req.body || {};
+
+  if (!ownerId) {
+    return res.status(400).json({ error: "ownerId required." });
+  }
+  if (!Array.isArray(spotIds) || spotIds.length === 0) {
+    return res.status(400).json({ error: "spotIds must be a non-empty array." });
+  }
+
+  const lot = getLotForOwner(lotId, String(ownerId));
+  if (!lot) {
+    return res.status(404).json({ error: "Lot not found for this owner." });
+  }
+
+  const cleanIds = spotIds.map(String);
+  const placeholders = cleanIds.map(() => "?").join(", ");
+
+  const occupiedRows = db
+    .prepare(`SELECT id FROM spots WHERE lot_id = ? AND id IN (${placeholders}) AND status = 'occupied'`)
+    .all(lotId, ...cleanIds);
+
+  if (occupiedRows.length > 0) {
+    const ids = occupiedRows.map((r) => r.id).join(", ");
+    return res.status(400).json({ error: `Cannot remove occupied spots: ${ids}.` });
+  }
+
+  const result = db.transaction(() =>
+    db.prepare(`DELETE FROM spots WHERE lot_id = ? AND id IN (${placeholders})`).run(lotId, ...cleanIds)
+  )();
+
+  return res.json({ message: "Spots removed.", deleted: result.changes });
+});
+
+// ── POST /api/signup ──────────────────────────────────────
+app.post("/api/signup", (req, res) => {
+  const { email, password, role } = req.body || {};
+
+  if (!String(email || "").trim()) {
+    return res.status(400).json({ error: "Email is required." });
+  }
+  if (!String(password || "").trim()) {
+    return res.status(400).json({ error: "Password is required." });
+  }
+  const normalizedRole = normalize(role);
+  if (!["driver", "owner"].includes(normalizedRole)) {
+    return res.status(400).json({ error: "Role must be 'driver' or 'owner'." });
+  }
+
+  const normalizedEmail = normalize(email);
+  const existing = db.prepare(`SELECT id FROM users WHERE lower(email) = ?`).get(normalizedEmail);
+  if (existing) {
+    return res.status(409).json({ error: "An account with this email already exists." });
+  }
+
+  const localPart = normalizedEmail.split("@")[0] || "user";
+  const displayName = localPart.charAt(0).toUpperCase() + localPart.slice(1);
+
+  let username = localPart;
+  const usernameTaken = db.prepare(`SELECT id FROM users WHERE lower(username) = ?`).get(username);
+  if (usernameTaken) {
+    username = `${localPart}_${Date.now()}`;
+  }
+
+  const newId = crypto.randomUUID();
+  const passwordHash = hashPassword(String(password));
+
+  db.prepare(
+    `INSERT INTO users (id, role, display_name, username, email, password_hash, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(newId, normalizedRole, displayName, username, normalizedEmail, passwordHash, nowIso());
+
+  return res.status(201).json({
+    user: { id: newId, role: normalizedRole, displayName },
   });
 });
 
