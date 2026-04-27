@@ -377,7 +377,7 @@ function FindParking({ userId }) {
           )}
         </div>
       )}
-      <DriverAnnouncements userId={userId} />
+      <DriverAnnouncements userId={userId} activeLotId={activeSession?.lotId} />
 
 
       <form onSubmit={handleSearch} className="form-inline search-bar">

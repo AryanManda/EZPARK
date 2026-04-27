@@ -402,3 +402,135 @@ select:focus {
     flex-wrap: wrap;
   }
 }
+
+.announcement-panel {
+  margin: 16px 0 20px;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #fafafa 100%);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+}
+
+.announcement-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.announcement-header h3 {
+  margin: 0 0 4px;
+}
+
+.announcement-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chip-notification {
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+
+.btn-ghost {
+  border: 1px solid #d1d5db;
+  background: #fff;
+}
+
+.announcement-list {
+  display: grid;
+  gap: 12px;
+}
+
+.announcement-card {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+  cursor: pointer;
+}
+
+.announcement-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.announcement-card.unread {
+  border-color: #93c5fd;
+  background: #f8fbff;
+}
+
+.announcement-card.priority {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.announcement-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #eff6ff;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.announcement-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.announcement-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.announcement-lot {
+  font-weight: 600;
+  color: #111827;
+}
+
+.announcement-time {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.announcement-message {
+  margin: 0;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.announcement-footer {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.announcement-dot {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+.announcement-empty {
+  padding: 20px;
+  border: 1px dashed #d1d5db;
+  border-radius: 14px;
+  text-align: center;
+  color: #6b7280;
+  background: #fcfcfd;
+}
