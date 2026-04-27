@@ -161,6 +161,11 @@ export async function deleteOwnerLot(lotId, ownerId) {
   return res.data;
 }
 
+export async function getDriverAnnouncements(userId) {
+  const res = await http.get(`/announcements?userId=${encodeURIComponent(userId)}`);
+  return Array.isArray(res.data) ? res.data : [];
+}
+
 export async function getAnnouncementActiveCount({ ownerId, lotId }) {
   const res = await http.get(
     `/announcements/active-count?ownerId=${encodeURIComponent(ownerId)}&lotId=${encodeURIComponent(lotId)}`

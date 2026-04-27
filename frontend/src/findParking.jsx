@@ -4,6 +4,7 @@ import {
   checkoutSession,
   extendSession,
   getActiveSession,
+  getDriverAnnouncements,
   getParkingWithFilters,
   getPaymentMethods,
   startSession,
@@ -33,6 +34,12 @@ function FindParking({ userId }) {
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState("");
   const [newCardForm, setNewCardForm] = useState({ cardHolder: "", cardNumber: "", expiry: "" });
 
+  const [announcements, setAnnouncements] = useState([]);
+  const [selectedLot, setSelectedLot] = useState(null);
+  const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
+  const [minimizedAnnouncement, setMinimizedAnnouncement] = useState(null);
+  const announcementDialogRef = useRef(null);
+
   const loadActiveSession = useCallback(async () => {
     try {
       const session = await getActiveSession(userId);
@@ -51,10 +58,20 @@ function FindParking({ userId }) {
     }
   }, [userId]);
 
+  const loadAnnouncements = useCallback(async () => {
+    try {
+      const data = await getDriverAnnouncements(userId);
+      setAnnouncements(Array.isArray(data) ? data : []);
+    } catch {
+      setAnnouncements([]);
+    }
+  }, [userId]);
+
   useEffect(() => {
     loadActiveSession();
     loadPaymentMethods();
-  }, [loadActiveSession, loadPaymentMethods]);
+    loadAnnouncements();
+  }, [loadActiveSession, loadPaymentMethods, loadAnnouncements]);
 
   const loadParkingResults = useCallback(async (searchLocation = "") => {
     setError("");
@@ -95,6 +112,30 @@ function FindParking({ userId }) {
     await loadParkingResults(location.trim());
   };
 
+  const getAnnouncementForLot = useCallback(
+    (lotId) => {
+      if (!lotId) return null;
+      return announcements.find((item) => Number(item.lotId) === Number(lotId)) || null;
+    },
+    [announcements]
+  );
+
+  const selectedLotAnnouncement = selectedLot ? getAnnouncementForLot(selectedLot.id) : null;
+
+  const handleLotSelect = (spot) => {
+  setSelectedLot(spot);
+
+  const matchedAnnouncement = getAnnouncementForLot(spot.id);
+  if (!matchedAnnouncement) return;
+
+  setMinimizedAnnouncement({
+    ...matchedAnnouncement,
+    lotName: spot.name,
+  });
+
+  setAnnouncementModalOpen(true);
+};
+
   const handleBook = async (spot) => {
     try {
       setBookingLoading(true);
@@ -110,6 +151,7 @@ function FindParking({ userId }) {
         message: `Checked in at ${spot.name} for 1 hour.`,
       });
       await loadParkingResults(location.trim());
+      await loadAnnouncements();
     } catch (err) {
       setSessionStatus({
         type: "error",
@@ -200,8 +242,8 @@ function FindParking({ userId }) {
       setActiveSession(null);
       closeCheckoutFlow();
       await loadPaymentMethods();
-
       await loadParkingResults(location.trim());
+      await loadAnnouncements();
     } catch (err) {
       setSessionStatus({
         type: "error",
@@ -257,6 +299,51 @@ function FindParking({ userId }) {
     },
     []
   );
+
+  useEffect(() => {
+    if (!announcementModalOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    announcementDialogRef.current?.focus();
+
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setAnnouncementModalOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [announcementModalOpen]);
+
+  const handleMinimizeAnnouncement = () => {
+    if (selectedLotAnnouncement && selectedLot) {
+      setMinimizedAnnouncement({
+        ...selectedLotAnnouncement,
+        lotName: selectedLot.name,
+      });
+    }
+    setAnnouncementModalOpen(false);
+  };
+
+  const handleCloseAnnouncement = () => {
+    setAnnouncementModalOpen(false);
+    setMinimizedAnnouncement(null);
+  };
+
+  const handleRestoreAnnouncement = () => {
+    if (!minimizedAnnouncement) return;
+
+    const matchedLot = results.find((spot) => Number(spot.id) === Number(minimizedAnnouncement.lotId));
+    if (matchedLot) {
+      setSelectedLot(matchedLot);
+    }
+    setAnnouncementModalOpen(true);
+  };
 
   return (
     <>
@@ -439,28 +526,114 @@ function FindParking({ userId }) {
 
       {visibleResults.length > 0 && (
         <div className="list">
-          {visibleResults.map((spot) => (
-            <article key={spot.id ?? spot.name} className={`parking-card ${spot.available ? "" : "disabled"}`}>
-              <div className="card-header">
-                <h3>{spot.name}</h3>
-                <span className="chip">${spot.price}/hr</span>
-              </div>
-              <p className="muted">Area: {spot.location}</p>
-              <p className="muted">Address: {spot.fullAddress || "Not provided"}</p>
-              <p className="muted">
-                Spots Left: <strong>{spot.remainingSpots ?? "-"}</strong> / {spot.capacity ?? "-"}
-              </p>
-              <p>
-                Status: <span className={spot.available ? "status-ok" : "status-bad"}>{spot.available ? "Available" : "Full"}</span>
-              </p>
-              {spot.available && !activeSession && (
-                <button className="btn primary" onClick={() => handleBook(spot)} disabled={bookingLoading}>
-                  {bookingLoading ? "Checking In..." : "Check In (1 hr)"}
-                </button>
-              )}
-            </article>
-          ))}
+          {visibleResults.map((spot) => {
+            const lotAnnouncement = getAnnouncementForLot(spot.id);
+            const isSelected = selectedLot?.id === spot.id;
+
+            return (
+              <article
+                key={spot.id ?? spot.name}
+                className={`parking-card ${spot.available ? "" : "disabled"} ${isSelected ? "selected-lot" : ""} ${lotAnnouncement ? "lot-has-announcement" : ""}`}
+                onClick={() => handleLotSelect(spot)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleLotSelect(spot);
+                  }
+                }}
+              >
+                <div className="card-header">
+                  <h3>{spot.name}</h3>
+                  <span className="chip">${spot.price}/hr</span>
+                </div>
+                <p className="muted">Area: {spot.location}</p>
+                <p className="muted">Address: {spot.fullAddress || "Not provided"}</p>
+                <p className="muted">
+                  Spots Left: <strong>{spot.remainingSpots ?? "-"}</strong> / {spot.capacity ?? "-"}
+                </p>
+                <p>
+                  Status: <span className={spot.available ? "status-ok" : "status-bad"}>{spot.available ? "Available" : "Full"}</span>
+                </p>
+
+          {lotAnnouncement && (
+            <div className="lot-announcement-hint">
+              <span className="chip chip-announcement">Announcement</span>
+            </div>
+          )}
+
+                {spot.available && !activeSession && (
+                  <button
+                    className="btn primary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleBook(spot);
+                    }}
+                    disabled={bookingLoading}
+                  >
+                    {bookingLoading ? "Checking In..." : "Check In (1 hr)"}
+                  </button>
+                )}
+              </article>
+            );
+          })}
         </div>
+      )}
+
+      {announcementModalOpen && selectedLotAnnouncement && selectedLot && (
+        <div
+          className="announcement-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setAnnouncementModalOpen(false);
+            }
+          }}
+        >
+          <div
+            className="announcement-fullscreen"
+            ref={announcementDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="announcement-title"
+            tabIndex={-1}
+          >
+            <div className="announcement-fullscreen-top">
+              <div>
+                <p className="announcement-eyebrow">Parking lot announcement</p>
+                <h2 id="announcement-title">{selectedLot.name}</h2>
+                <p className="muted">
+                  {new Date(selectedLotAnnouncement.createdAt).toLocaleString()}
+                </p>
+              </div>
+
+              <div className="announcement-modal-actions">
+                <button className="btn" type="button" onClick={handleMinimizeAnnouncement}>
+                  Minimize
+                </button>
+                <button className="btn primary" type="button" onClick={handleCloseAnnouncement}>
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="announcement-fullscreen-body">
+              <p>{selectedLotAnnouncement.message}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!announcementModalOpen && minimizedAnnouncement && (
+        <button
+          type="button"
+          className="announcement-fab"
+          onClick={handleRestoreAnnouncement}
+          aria-label="Open minimized lot announcement"
+        >
+          <span className="announcement-fab-label">Lot announcement</span>
+          <strong>{minimizedAnnouncement.lotName || `Lot #${minimizedAnnouncement.lotId}`}</strong>
+        </button>
       )}
     </>
   );
