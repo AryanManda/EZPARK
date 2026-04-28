@@ -46,6 +46,22 @@ function ensureUserAuthColumns() {
   `);
 }
 
+function ensureSpotColumns() {
+  const columns = db.prepare(`PRAGMA table_info(spots)`).all();
+  const columnNames = new Set(columns.map((c) => c.name));
+  if (!columnNames.has("driver_name"))       db.exec(`ALTER TABLE spots ADD COLUMN driver_name TEXT`);
+  if (!columnNames.has("vehicle_make"))      db.exec(`ALTER TABLE spots ADD COLUMN vehicle_make TEXT`);
+  if (!columnNames.has("vehicle_model"))     db.exec(`ALTER TABLE spots ADD COLUMN vehicle_model TEXT`);
+  if (!columnNames.has("license_plate"))     db.exec(`ALTER TABLE spots ADD COLUMN license_plate TEXT`);
+  if (!columnNames.has("session_start_time")) db.exec(`ALTER TABLE spots ADD COLUMN session_start_time TEXT`);
+}
+
+function ensureSessionSpotColumn() {
+  const columns = db.prepare(`PRAGMA table_info(parking_sessions)`).all();
+  const columnNames = new Set(columns.map((c) => c.name));
+  if (!columnNames.has("spot_id")) db.exec(`ALTER TABLE parking_sessions ADD COLUMN spot_id TEXT`);
+}
+
 function parseAllowedTypes(raw) {
   if (!raw) return ["any"];
   try {
@@ -141,6 +157,8 @@ function initDb() {
   `);
 
   ensureUserAuthColumns();
+  ensureSpotColumns();
+  ensureSessionSpotColumn();
 
   db.prepare(
     `INSERT OR IGNORE INTO users
@@ -638,7 +656,7 @@ app.delete("/api/vehicles/:id", (req, res) => {
 });
 
 app.post("/api/sessions/start", (req, res) => {
-  const { userId, lotName, lotId, hours } = req.body || {};
+  const { userId, lotName, lotId, hours, vehicleId } = req.body || {};
 
   if (!userId || (!lotName && !lotId) || !hours || Number(hours) < 1) {
     return res.status(400).json({ error: "userId, lotName (or lotId), and hours are required." });
@@ -664,13 +682,63 @@ app.post("/api/sessions/start", (req, res) => {
     return res.status(400).json({ error: "This parking lot is full." });
   }
 
+  // Seed spots if they haven't been created yet, then find first available
+  let spotRows = db.prepare(`SELECT * FROM spots WHERE lot_id = ? ORDER BY id`).all(lot.id);
+  if (spotRows.length === 0) {
+    seedSpotsForLot(lot);
+    spotRows = db.prepare(`SELECT * FROM spots WHERE lot_id = ? ORDER BY id`).all(lot.id);
+  }
+  const availableSpot = spotRows.find((s) => s.status === "available") ?? null;
+
+  // Optionally look up the selected vehicle (must belong to this user)
+  let vehicle = null;
+  if (vehicleId) {
+    vehicle = db
+      .prepare(`SELECT * FROM vehicles WHERE id = ? AND user_id = ?`)
+      .get(Number(vehicleId), String(userId));
+  }
+
+  // Fetch driver display name for the spot record
+  const driverUser = db.prepare(`SELECT display_name FROM users WHERE id = ?`).get(String(userId));
+  const driverName = driverUser?.display_name || String(userId);
+
   const startTime = new Date();
   const endTime = new Date(startTime.getTime() + Number(hours) * 60 * 60 * 1000);
 
-  const result = db.prepare(
-    `INSERT INTO parking_sessions (user_id, lot_id, lot_name_snapshot, start_time, end_time, active)
-     VALUES (?, ?, ?, ?, ?, 1)`
-  ).run(String(userId), lot.id, lot.name, startTime.toISOString(), endTime.toISOString());
+  const { sessionRowId } = db.transaction(() => {
+    const sessionResult = db.prepare(
+      `INSERT INTO parking_sessions
+         (user_id, lot_id, lot_name_snapshot, start_time, end_time, active, spot_id)
+       VALUES (?, ?, ?, ?, ?, 1, ?)`
+    ).run(
+      String(userId), lot.id, lot.name,
+      startTime.toISOString(), endTime.toISOString(),
+      availableSpot?.id ?? null
+    );
+
+    if (availableSpot) {
+      db.prepare(
+        `UPDATE spots
+         SET status = 'occupied',
+             driver_name = ?,
+             vehicle_make = ?,
+             vehicle_model = ?,
+             license_plate = ?,
+             session_start_time = ?
+         WHERE id = ? AND lot_id = ?`
+      ).run(
+        driverName,
+        vehicle?.make ?? null,
+        vehicle?.model ?? null,
+        vehicle?.license_plate ?? null,
+        startTime.toISOString(),
+        availableSpot.id,
+        lot.id
+      );
+    }
+
+    return { sessionRowId: sessionResult.lastInsertRowid };
+  })();
 
   const session = db
     .prepare(
@@ -686,7 +754,7 @@ app.post("/api/sessions/start", (req, res) => {
        FROM parking_sessions
        WHERE id = ?`
     )
-    .get(result.lastInsertRowid);
+    .get(sessionRowId);
 
   const latestLot = db.prepare(`SELECT * FROM parking_lots WHERE id = ?`).get(lot.id);
 
@@ -785,11 +853,26 @@ app.post("/api/sessions/checkout", (req, res) => {
     return res.status(404).json({ error: "No active session found." });
   }
 
-  db.prepare(
-    `UPDATE parking_sessions
-     SET active = 0, checked_out_at = ?, payment_method_id = ?
-     WHERE id = ?`
-  ).run(nowIso(), selectedMethod.id, session.id);
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE parking_sessions
+       SET active = 0, checked_out_at = ?, payment_method_id = ?
+       WHERE id = ?`
+    ).run(nowIso(), selectedMethod.id, session.id);
+
+    if (session.spot_id) {
+      db.prepare(
+        `UPDATE spots
+         SET status = 'available',
+             driver_name = NULL,
+             vehicle_make = NULL,
+             vehicle_model = NULL,
+             license_plate = NULL,
+             session_start_time = NULL
+         WHERE id = ? AND lot_id = ?`
+      ).run(session.spot_id, session.lot_id);
+    }
+  })();
 
   const updatedSession = db
     .prepare(
@@ -927,6 +1010,11 @@ function spotToApiModel(row) {
     status: row.status,
     timeLimitMinutes: row.time_limit_minutes ?? null,
     overrideReason: row.override_reason ?? null,
+    driverName: row.driver_name ?? null,
+    vehicleMake: row.vehicle_make ?? null,
+    vehicleModel: row.vehicle_model ?? null,
+    licensePlate: row.license_plate ?? null,
+    sessionStartTime: row.session_start_time ?? null,
   };
 }
 

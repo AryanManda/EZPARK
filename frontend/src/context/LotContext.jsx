@@ -1,5 +1,5 @@
 // src/context/LotContext.jsx
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { getOwnerLots, getLotSpots } from "../api/parkingApi.js";
 
 const LotContext = createContext(null);
@@ -176,43 +176,52 @@ export function LotProvider({ children, user }) {
 
   const activeLot = lots.find((l) => l.id === activeLotId) ?? lots[0] ?? createFallbackLot();
 
-  // ── Hydrate spots from DB whenever the active lot changes ──
+  // ── Hydrate spots from DB whenever the active lot changes, then poll every 15s ──
   const activeLotBackendId = activeLot.backendLotId;
   const activeOwnerIdForSpots = user?.role === "owner" ? user.id : readOwnerIdFromSession();
+  const pollRef = useRef(null);
 
   useEffect(() => {
     if (!activeLotBackendId || !activeOwnerIdForSpots) return;
     let mounted = true;
 
+    function applySpots(apiSpots) {
+      setLots((prev) =>
+        prev.map((l) =>
+          l.backendLotId !== activeLotBackendId
+            ? l
+            : {
+                ...l,
+                spots: apiSpots.map((s) => ({
+                  id: s.id,
+                  status: s.status,
+                  vehicleType: s.vehicleType,
+                  timeLimitMinutes: s.timeLimitMinutes,
+                  overrideReason: s.overrideReason,
+                  driver: s.driverName ?? null,
+                  car: s.vehicleMake && s.vehicleModel ? `${s.vehicleMake} ${s.vehicleModel}` : null,
+                  plate: s.licensePlate ?? null,
+                  time: s.sessionStartTime ?? null,
+                  sessionStartIso: s.sessionStartTime ?? null,
+                })),
+              }
+        )
+      );
+    }
+
     getLotSpots(activeLotBackendId, activeOwnerIdForSpots)
-      .then((apiSpots) => {
-        if (!mounted) return;
-        setLots((prev) =>
-          prev.map((l) =>
-            l.backendLotId !== activeLotBackendId
-              ? l
-              : {
-                  ...l,
-                  spots: apiSpots.map((s) => ({
-                    id: s.id,
-                    status: s.status,
-                    vehicleType: s.vehicleType,
-                    timeLimitMinutes: s.timeLimitMinutes,
-                    overrideReason: s.overrideReason,
-                    driver: null,
-                    car: null,
-                    plate: null,
-                    time: null,
-                    sessionStartIso: null,
-                  })),
-                }
-          )
-        );
-      })
-      .catch(() => {}); // silently keep in-memory spots if fetch fails
+      .then((apiSpots) => { if (mounted) applySpots(apiSpots); })
+      .catch(() => {});
+
+    pollRef.current = setInterval(() => {
+      getLotSpots(activeLotBackendId, activeOwnerIdForSpots)
+        .then((apiSpots) => { if (mounted) applySpots(apiSpots); })
+        .catch(() => {});
+    }, 15000);
 
     return () => {
       mounted = false;
+      clearInterval(pollRef.current);
     };
   }, [activeLotBackendId, activeOwnerIdForSpots]);
 

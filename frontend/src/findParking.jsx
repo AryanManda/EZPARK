@@ -7,6 +7,7 @@ import {
   getDriverAnnouncements,
   getParkingWithFilters,
   getPaymentMethods,
+  getVehicles,
   startSession,
 } from "./api/parkingApi";
 
@@ -33,6 +34,9 @@ function FindParking({ userId }) {
   const [checkoutFlowOpen, setCheckoutFlowOpen] = useState(false);
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState("");
   const [newCardForm, setNewCardForm] = useState({ cardHolder: "", cardNumber: "", expiry: "" });
+
+  const [vehicles, setVehicles] = useState([]);
+  const [selectedVehicleId, setSelectedVehicleId] = useState("");
 
   const [announcements, setAnnouncements] = useState([]);
   const [selectedLot, setSelectedLot] = useState(null);
@@ -67,11 +71,23 @@ function FindParking({ userId }) {
     }
   }, [userId]);
 
+  const loadVehicles = useCallback(async () => {
+    try {
+      const data = await getVehicles(userId);
+      const list = Array.isArray(data) ? data : [];
+      setVehicles(list);
+      if (list.length > 0) setSelectedVehicleId(String(list[0].id));
+    } catch {
+      setVehicles([]);
+    }
+  }, [userId]);
+
   useEffect(() => {
     loadActiveSession();
     loadPaymentMethods();
     loadAnnouncements();
-  }, [loadActiveSession, loadPaymentMethods, loadAnnouncements]);
+    loadVehicles();
+  }, [loadActiveSession, loadPaymentMethods, loadAnnouncements, loadVehicles]);
 
   const loadParkingResults = useCallback(async (searchLocation = "") => {
     setError("");
@@ -151,11 +167,9 @@ function FindParking({ userId }) {
     try {
       setBookingLoading(true);
       setSessionStatus({ type: "", message: "" });
-      const res = await startSession({
-        userId,
-        lotName: spot.name,
-        hours: 1,
-      });
+      const payload = { userId, lotName: spot.name, hours: 1 };
+      if (selectedVehicleId) payload.vehicleId = Number(selectedVehicleId);
+      const res = await startSession(payload);
       setActiveSession(res.session);
       setSessionStatus({
         type: "success",
@@ -580,16 +594,33 @@ function FindParking({ userId }) {
           )}
 
                 {spot.available && !activeSession && (
-                  <button
-                    className="btn primary"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleBook(spot);
-                    }}
-                    disabled={bookingLoading}
-                  >
-                    {bookingLoading ? "Checking In..." : "Check In (1 hr)"}
-                  </button>
+                  vehicles.length === 0 ? (
+                    <p className="alert error" style={{ marginBottom: 0 }}>Register a vehicle before checking in.</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <select
+                        className="input"
+                        value={selectedVehicleId}
+                        onChange={(e) => setSelectedVehicleId(e.target.value)}
+                        disabled={bookingLoading}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label="Select vehicle"
+                      >
+                        {vehicles.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.licensePlate} — {v.make} {v.model}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="btn primary"
+                        onClick={(e) => { e.stopPropagation(); handleBook(spot); }}
+                        disabled={bookingLoading}
+                      >
+                        {bookingLoading ? "Checking In..." : "Check In (1 hr)"}
+                      </button>
+                    </div>
+                  )
                 )}
               </article>
             );
