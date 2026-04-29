@@ -50,6 +50,7 @@ function AccountSettings({ userId }) {
     }
   };
 
+  const [hiddenCards, setHiddenCards] = useState([]);
   return (
     <>
       <h2 className="section-title">Account Settings</h2>
@@ -102,22 +103,41 @@ function AccountSettings({ userId }) {
         </div>
       )}
 
-      {saved.length > 0 && (
-        <>
-          <h3 className="section-title" style={{ marginTop: "20px" }}>Saved Cards</h3>
-          <div className="list">
-            {saved.map((m) => (
-              <article key={m.id} className="parking-card">
-                <div className="card-header">
-                  <h3>{m.masked}</h3>
-                  <span className="chip">Expires {m.expiry}</span>
-                </div>
-                <p className="muted">{m.cardHolder}</p>
-              </article>
-            ))}
-          </div>
-        </>
-      )}
+
+{saved.length > 0 && (
+  <>
+    <h3 className="section-title" style={{ marginTop: "20px" }}>
+      Saved Cards
+    </h3>
+
+    <div className="list">
+      {saved.map((m) => {
+
+        if (hiddenCards.includes(m.id)) return null;
+
+        return (
+          <article key={m.id} className="parking-card">
+            <div className="card-header">
+              <h3>{m.masked}</h3>
+              <span className="chip">Expires {m.expiry}</span>
+            </div>
+
+            <p className="muted">{m.cardHolder}</p>
+
+            <button
+              className="btn small"
+              onClick={() =>
+                setHiddenCards((prev) => [...prev, m.id])
+              }
+            >
+              Remove Card
+            </button>
+          </article>
+        );
+      })}
+    </div>
+  </>
+)}
     </>
   );
 }
