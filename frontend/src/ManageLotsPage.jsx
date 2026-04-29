@@ -1,8 +1,8 @@
 // src/ManageLotsPage.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useLot } from "./context/LotContext.jsx";
-import { deleteOwnerLot, registerParkingLot, updateOwnerLot } from "./api/parkingApi";
+import { deleteOwnerLot, getOwnerLots, registerParkingLot, updateOwnerLot } from "./api/parkingApi";
 import "./dashboard.css";
 
 const AUTH_STORAGE_KEY = "ezpark-auth-user";
@@ -25,13 +25,42 @@ export default function ManageLotsPage() {
   const [editingLotId, setEditingLotId] = useState(null);
   const [formName, setFormName] = useState("");
   const [formAddress, setFormAddress] = useState("");
+  const [formLat, setFormLat] = useState("");
+  const [formLng, setFormLng] = useState("");
+  const [geoLoading, setGeoLoading] = useState(false);
   const [formError, setFormError] = useState("");
+  // Local cache of lat/lng keyed by backendLotId — LotContext doesn't carry coords
+  const [coordsMap, setCoordsMap] = useState({});
+
+  // Seed coordsMap from the server on mount so existing lot coords are shown correctly
+  useEffect(() => {
+    const ownerId = readOwnerIdFromSession();
+    getOwnerLots(ownerId).then((apiLots) => {
+      const map = {};
+      apiLots.forEach((l) => {
+        if (l.lat != null || l.lng != null) {
+          map[l.id] = { lat: l.lat, lng: l.lng };
+        }
+      });
+      setCoordsMap(map);
+    }).catch(() => {});
+  }, []);
 
   async function handleSave() {
     if (!formName.trim()) { setFormError("Lot name is required."); return; }
     if (!formAddress.trim()) { setFormError("Address is required."); return; }
 
     try {
+      const parsedLat = formLat !== "" ? parseFloat(formLat) : null;
+      const parsedLng = formLng !== "" ? parseFloat(formLng) : null;
+
+      if (formLat !== "" && (isNaN(parsedLat) || parsedLat < -90 || parsedLat > 90)) {
+        setFormError("Latitude must be between -90 and 90."); return;
+      }
+      if (formLng !== "" && (isNaN(parsedLng) || parsedLng < -180 || parsedLng > 180)) {
+        setFormError("Longitude must be between -180 and 180."); return;
+      }
+
       const ownerId = readOwnerIdFromSession();
       const payload = {
         ownerId,
@@ -40,18 +69,26 @@ export default function ManageLotsPage() {
         fullAddress: formAddress.trim(),
         price: 5,
         capacity: 20,
+        lat: parsedLat,
+        lng: parsedLng,
       };
 
       if (editingLotId) {
         const response = await updateOwnerLot(editingLotId, payload);
         updateLot(response.lot);
+        setCoordsMap((prev) => ({ ...prev, [editingLotId]: { lat: parsedLat, lng: parsedLng } }));
       } else {
         const response = await registerParkingLot(payload);
         addLot(response.lot);
+        if (response.lot?.id) {
+          setCoordsMap((prev) => ({ ...prev, [response.lot.id]: { lat: parsedLat, lng: parsedLng } }));
+        }
       }
 
       setFormName("");
       setFormAddress("");
+      setFormLat("");
+      setFormLng("");
       setFormError("");
       setShowForm(false);
       setEditingLotId(null);
@@ -64,6 +101,8 @@ export default function ManageLotsPage() {
     setEditingLotId(null);
     setFormName("");
     setFormAddress("");
+    setFormLat("");
+    setFormLng("");
     setFormError("");
     setShowForm(true);
   }
@@ -72,8 +111,32 @@ export default function ManageLotsPage() {
     setEditingLotId(lot.backendLotId);
     setFormName(lot.name);
     setFormAddress(lot.address);
+    const cached = coordsMap[lot.backendLotId];
+    const lat = cached?.lat ?? lot.lat;
+    const lng = cached?.lng ?? lot.lng;
+    setFormLat(lat != null ? String(lat) : "");
+    setFormLng(lng != null ? String(lng) : "");
     setFormError("");
     setShowForm(true);
+  }
+
+  function handleUseMyLocation() {
+    if (!navigator.geolocation) {
+      setFormError("Geolocation is not supported by your browser.");
+      return;
+    }
+    setGeoLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setFormLat(String(pos.coords.latitude.toFixed(6)));
+        setFormLng(String(pos.coords.longitude.toFixed(6)));
+        setGeoLoading(false);
+      },
+      () => {
+        setFormError("Could not get your location. Please enter coordinates manually.");
+        setGeoLoading(false);
+      }
+    );
   }
 
   function handleSwitch(id) {
@@ -157,10 +220,50 @@ export default function ManageLotsPage() {
                   onChange={(e) => setFormAddress(e.target.value)}
                 />
               </div>
+
+              <div className="field">
+                <label className="field-label">
+                  Coordinates <span className="muted" style={{ fontWeight: "normal" }}>(optional — enables distance sorting for drivers)</span>
+                </label>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                  <input
+                    className="input"
+                    type="number"
+                    step="any"
+                    placeholder="Latitude (e.g. 40.7128)"
+                    value={formLat}
+                    onChange={(e) => setFormLat(e.target.value)}
+                    style={{ flex: 1, minWidth: "140px" }}
+                  />
+                  <input
+                    className="input"
+                    type="number"
+                    step="any"
+                    placeholder="Longitude (e.g. -74.0060)"
+                    value={formLng}
+                    onChange={(e) => setFormLng(e.target.value)}
+                    style={{ flex: 1, minWidth: "140px" }}
+                  />
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={handleUseMyLocation}
+                    disabled={geoLoading}
+                    style={{ whiteSpace: "nowrap", fontSize: "0.82rem" }}
+                  >
+                    {geoLoading ? "Locating..." : "📍 Use my location"}
+                  </button>
+                </div>
+                {formLat && formLng && (
+                  <p className="muted" style={{ marginTop: "4px", fontSize: "0.8rem" }}>
+                    📍 {parseFloat(formLat).toFixed(5)}, {parseFloat(formLng).toFixed(5)}
+                  </p>
+                )}
+              </div>
               {formError && <div className="alert error">{formError}</div>}
               <div style={{ display: "flex", gap: "10px" }}>
                 <button className="btn primary" onClick={handleSave}>{editingLotId ? "Update Lot" : "Save Lot"}</button>
-                <button className="btn" onClick={() => { setShowForm(false); setEditingLotId(null); setFormError(""); }}>Cancel</button>
+                <button className="btn" onClick={() => { setShowForm(false); setEditingLotId(null); setFormLat(""); setFormLng(""); setFormError(""); }}>Cancel</button>
               </div>
             </div>
           </div>
@@ -183,6 +286,20 @@ export default function ManageLotsPage() {
                 <div>
                   <div className="lot-card-name">{lot.name}</div>
                   <div className="lot-card-address">{lot.address}</div>
+                  {(() => {
+                    const cached = coordsMap[lot.backendLotId];
+                    const lat = cached?.lat ?? lot.lat;
+                    const lng = cached?.lng ?? lot.lng;
+                    return lat != null && lng != null ? (
+                      <div className="muted" style={{ fontSize: "0.75rem", marginTop: "2px" }}>
+                        📍 {Number(lat).toFixed(4)}, {Number(lng).toFixed(4)}
+                      </div>
+                    ) : (
+                      <div className="muted" style={{ fontSize: "0.75rem", marginTop: "2px", color: "var(--warning, #b07d2b)" }}>
+                        ⚠ No coordinates — drivers won't see distance
+                      </div>
+                    );
+                  })()}
                 </div>
                 {lot.id === activeLotId && (
                   <span className="chip chip-active" style={{ flexShrink: 0 }}>Active</span>
