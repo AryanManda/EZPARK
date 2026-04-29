@@ -2,17 +2,25 @@
 import React, { useState, useEffect } from "react";
 import { addPaymentMethod, getPaymentMethods } from "./api/parkingApi";
 
+
 function AccountSettings({ userId }) {
   const [form, setForm] = useState({ cardHolder: "", cardNumber: "", expiry: "" });
   const [saved, setSaved] = useState([]);
   const [status, setStatus] = useState({ type: "", message: "" });
   const [loading, setLoading] = useState(false);
+  const [hiddenCards, setHiddenCards] = useState(() => {
+  const saved = localStorage.getItem("hiddenCards");
+  return saved ? JSON.parse(saved) : [];
+  });
 
   useEffect(() => {
     getPaymentMethods(userId)
       .then((methods) => setSaved(methods))
       .catch(() => {});
   }, [userId]);
+  useEffect(() => {
+  localStorage.setItem("hiddenCards", JSON.stringify(hiddenCards));
+  }, [hiddenCards]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -49,6 +57,7 @@ function AccountSettings({ userId }) {
       setLoading(false);
     }
   };
+
 
   return (
     <>
@@ -102,22 +111,41 @@ function AccountSettings({ userId }) {
         </div>
       )}
 
-      {saved.length > 0 && (
-        <>
-          <h3 className="section-title" style={{ marginTop: "20px" }}>Saved Cards</h3>
-          <div className="list">
-            {saved.map((m) => (
-              <article key={m.id} className="parking-card">
-                <div className="card-header">
-                  <h3>{m.masked}</h3>
-                  <span className="chip">Expires {m.expiry}</span>
-                </div>
-                <p className="muted">{m.cardHolder}</p>
-              </article>
-            ))}
-          </div>
-        </>
-      )}
+
+{saved.length > 0 && (
+  <>
+    <h3 className="section-title" style={{ marginTop: "20px" }}>
+      Saved Cards
+    </h3>
+
+    <div className="list">
+      {saved.map((m) => {
+
+        if (hiddenCards.includes(m.id)) return null;
+
+        return (
+          <article key={m.id} className="parking-card">
+            <div className="card-header">
+              <h3>{m.masked}</h3>
+              <span className="chip">Expires {m.expiry}</span>
+            </div>
+
+            <p className="muted">{m.cardHolder}</p>
+
+            <button
+              className="btn small"
+              onClick={() =>
+                setHiddenCards((prev) => [...prev, m.id])
+              }
+            >
+              Remove Card
+            </button>
+          </article>
+        );
+      })}
+    </div>
+  </>
+)}
     </>
   );
 }
