@@ -463,8 +463,15 @@ app.post("/api/register", (req, res) => {
   }
 
   const parsedPrice = Number(price);
-  const parsedCapacity = capacity ? Number(capacity) : 1;
+  if (capacity == null || capacity === "") {
+    return res.status(400).json({ error: "Capacity is required." });
+  }
 
+  const parsedCapacity = Number(capacity);
+
+  if (!Number.isFinite(parsedCapacity) || parsedCapacity < 1) {
+    return res.status(400).json({ error: "Capacity must be at least 1." });
+  }
   if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
     return res.status(400).json({ error: "Price must be a valid positive number." });
   }

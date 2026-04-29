@@ -31,6 +31,8 @@ export default function ManageLotsPage() {
   const [formError, setFormError] = useState("");
   // Local cache of lat/lng keyed by backendLotId — LotContext doesn't carry coords
   const [coordsMap, setCoordsMap] = useState({});
+  const [formPrice, setFormPrice] = useState("");
+  const [formCapacity, setFormCapacity] = useState("");
 
   // Seed coordsMap from the server on mount so existing lot coords are shown correctly
   useEffect(() => {
@@ -50,6 +52,16 @@ export default function ManageLotsPage() {
     if (!formName.trim()) { setFormError("Lot name is required."); return; }
     if (!formAddress.trim()) { setFormError("Address is required."); return; }
 
+  if (!formPrice || Number(formPrice) <= 0) {
+    setFormError("Price must be greater than 0.");
+    return;
+  }
+
+  if (!formCapacity || Number(formCapacity) < 1) {
+    setFormError("Capacity must be at least 1.");
+    return;
+  }
+
     try {
       const parsedLat = formLat !== "" ? parseFloat(formLat) : null;
       const parsedLng = formLng !== "" ? parseFloat(formLng) : null;
@@ -67,8 +79,8 @@ export default function ManageLotsPage() {
         name: formName.trim(),
         location: formAddress.trim(),
         fullAddress: formAddress.trim(),
-        price: 5,
-        capacity: 20,
+        price: Number(formPrice),
+        capacity: Number(formCapacity),
         lat: parsedLat,
         lng: parsedLng,
       };
@@ -90,6 +102,8 @@ export default function ManageLotsPage() {
       setFormLat("");
       setFormLng("");
       setFormError("");
+      setFormPrice("");
+      setFormCapacity("");
       setShowForm(false);
       setEditingLotId(null);
     } catch (err) {
@@ -111,6 +125,8 @@ export default function ManageLotsPage() {
     setEditingLotId(lot.backendLotId);
     setFormName(lot.name);
     setFormAddress(lot.address);
+    setFormPrice(lot.price != null ? String(lot.price) : "");
+    setFormCapacity(lot.capacity != null ? String(lot.capacity) : "");
     const cached = coordsMap[lot.backendLotId];
     const lat = cached?.lat ?? lot.lat;
     const lng = cached?.lng ?? lot.lng;
@@ -222,6 +238,31 @@ export default function ManageLotsPage() {
               </div>
 
               <div className="field">
+              <label className="field-label">Price per Hour ($)</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                step="0.5"
+                placeholder="e.g. 5"
+                value={formPrice}
+                onChange={(e) => setFormPrice(e.target.value)}
+              />
+            </div>
+
+            <div className="field">
+              <label className="field-label">Number of Spots</label>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                placeholder="e.g. 20"
+                value={formCapacity}
+                onChange={(e) => setFormCapacity(e.target.value)}
+              />
+            </div>
+
+              <div className="field">
                 <label className="field-label">
                   Coordinates <span className="muted" style={{ fontWeight: "normal" }}>(optional — enables distance sorting for drivers)</span>
                 </label>
@@ -260,10 +301,12 @@ export default function ManageLotsPage() {
                   </p>
                 )}
               </div>
+
               {formError && <div className="alert error">{formError}</div>}
               <div style={{ display: "flex", gap: "10px" }}>
                 <button className="btn primary" onClick={handleSave}>{editingLotId ? "Update Lot" : "Save Lot"}</button>
-                <button className="btn" onClick={() => { setShowForm(false); setEditingLotId(null); setFormLat(""); setFormLng(""); setFormError(""); }}>Cancel</button>
+                <button className="btn" onClick={() => { setShowForm(false); setEditingLotId(null); setFormLat(""); setFormLng(""); setFormError(""); setFormPrice("");
+setFormCapacity("");}}>Cancel</button>
               </div>
             </div>
           </div>
